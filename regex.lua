@@ -1,7 +1,7 @@
 -- ed.regex.lua - the pattern-matching and substituting part of
 -- a version of "ed" in Lua.  Uses Lua patterns and substitutions, not regex.
 
-local set_error_msg = set_error_msg	-- from main_loop
+local error_msg = set_error_msg	-- from main_loop
 local parse_int = parse_int 		-- from main_loop
 
 local buffer = require "buffer"
@@ -9,6 +9,11 @@ local inout = require "inout"		-- only for get_tty_line :-(
 local pcall = pcall
 
 local print,tostring = print,tostring -- DEBUG
+
+local function error_msg (msg)
+  local io = require "io"
+  io.stderr.write(msg .. "/n")
+end
 
 module "regex"
 
@@ -60,12 +65,12 @@ do
     local delim_cc = lua_cc_escape(delimiter)
 
     if delimiter == " " then
-      set_error_msg "Invalid pattern delimiter"
+      error_msg "Invalid pattern delimiter"
       return nil
     end
     if delimiter == '\n' or ibuf:sub(2,2):match("[\n"..delim_cc.."]") then
       if delimiter ~= '\n' then ibuf = ibuf:sub(2) end
-      if not exp then set_error_msg "No previous pattern" end
+      if not exp then error_msg "No previous pattern" end
       return exp,ibuf
     end
     ibuf = ibuf:sub(2)
@@ -82,7 +87,7 @@ function build_active_list(ibuf, first_addr, second_addr, match)
   local pat, lp
 
   if delimiter:match("[ \n]") then
-    set_error_msg "Invalid pattern delimiter"
+    error_msg "Invalid pattern delimiter"
     return nil
   end
   pat,ibuf = get_compiled_pattern(ibuf)
@@ -111,7 +116,7 @@ local function extract_subst_template(ibuf, isglobal)
   if ibuf:sub(1,1) == '%' and ibuf:sub(2,1) == delimiter then
     ibuf = ibuf:sub(2)
     if not stbuf then
-      set_error_msg "No previous substitution"
+      error_msg "No previous substitution"
       return nil
     end
     -- template is already in stbuf
@@ -190,13 +195,13 @@ function next_matching_node_addr(ibuf, forward)
       -- we catch syntax errors in the pattern and report the error message.
       ok,s = pcall(s.match, s, pat)
       if not ok then
-        set_error_msg(s)
+        error_msg(s)
         return nil
       end
       if s then return addr,ibuf end
     end
   until addr == buffer.current_addr
-  set_error_msg "No match"
+  error_msg "No match"
   return nil
 end
 
@@ -233,7 +238,7 @@ local function replace_matching_text(lp, gflags, snum)
   ok, txt, snum = pcall(txt.gsub, txt, global_pat, stbuf, snum)
   -- snum is now the number of substitutions that were made
   if not ok then
-    set_error_msg(txt)
+    error_msg(txt)
     return nil
   end
   return txt,snum
@@ -263,7 +268,7 @@ function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
     end
   end
   if not match_found and not gflags['b'] then
-    set_error_msg "No match"
+    error_msg "No match"
     return nil
   end
   return true

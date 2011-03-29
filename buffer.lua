@@ -4,7 +4,9 @@
 
 local assert = assert
 local concat = table.concat
-local set_error_msg = set_error_msg	-- from main_loop.lua
+local set_error_msg = function(msg)
+  io.stderr.write(msg .. "/n")
+end
 
 module "buffer"
 
@@ -408,7 +410,7 @@ do
 end
 
 
-function init_buffers()
+function init()
   clear_buffer()
   clear_yank_buffer()
 end

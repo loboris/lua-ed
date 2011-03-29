@@ -5,8 +5,12 @@
 -- TODO: reimplement using file:lines iterator
 
 -- Preserve global functions from parent modules
-local set_error_msg = set_error_msg     -- from main_loop
 local parse_int = parse_int             -- from main_loop
+
+local function error_msg (msg)
+  local io = require "io"
+  io.stderr.write(msg .. "/n")
+end
 
 -- Import child modules
 local buffer = require "buffer" 
@@ -62,12 +66,10 @@ local function put_tty_line(p, gflags)
       if col + #ch > window_columns then
         iowrite("\\\n") col = 0
 	if gflags['n'] then
-	  iowrite("\t")
-	  col = 8
+	  iowrite("\t") col = 8
 	end
       end
-      iowrite(ch)
-      col = col + #ch
+      iowrite(ch)       col = col + #ch
     end
   end
   if gflags['l'] then
@@ -82,7 +84,7 @@ function display_lines(from, to, gflags)
 
   if from == 0 then
     -- I don't believe this can happen.
-    -- set_error_msg "Invalid address"
+    error_msg "Invalid address"
     iowrite "Impossible error in display_lines\n"
     return
   end
@@ -194,13 +196,13 @@ end
 function read_file(filename, addr)
   local fp,err
   if filename:match("^!") then
-    set_error_msg "Shell escapes are not implemented"
+    error_msg "Shell escapes are not implemented"
     return nil
   else
     fp,err = ioopen(filename)
   end
   if not fp then
-    set_error_msg(err)
+    error_msg(err)
     return nil
   end
   local size = read_stream(fp, addr)
@@ -223,7 +225,7 @@ local function write_stream(fp, from, to)
     local p = lp.line .. "\n"
     size = size + #p
     if not fp:write(p) then
-      set_error_msg "Cannot write file"
+      error_msg "Cannot write file"
       return nil
     end
     from = from + 1
@@ -238,20 +240,20 @@ function write_file(filename, mode, from, to)
   local fp, size
 
   if filename:match("^!") then
-    set_error_msg "Shell escapes not implemented"
+    error_msg "Shell escapes not implemented"
     return nil
   else
     -- TODO strip_escapes(filename)
     fp = ioopen(filename, mode)
   end
   if not fp then
-    set_error_msg "Cannot open output file"
+    error_msg "Cannot open output file"
     return nil
   end
   size = write_stream(fp, from, to)
   if not size then return nil end
   if not fp:close() then
-    set_error_msg "Error closing output file"
+    error_msg "Error closing output file"
   end
   iowrite(format("%d\n", size))
   return (from ~= 0 and from <= to) and (to - from + 1) or 0

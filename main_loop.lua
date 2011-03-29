@@ -1,8 +1,6 @@
--- main_loop.lua: Main loop of a version of "ed" in Lua.
+-- mainloop.lua: Main loop of a version of "ed" in Lua.
 
--- Error message handling: set_error_msg() is called by regex.lua and buffer.lua
-local errmsg = nil		-- error message buffer
-function set_error_msg(msg) errmsg = msg end
+-- Error message handling: set_error_msg () is called by regex.lua and buffer.lua
 
 -- parse a positive integer from the buffer, which is guaranteed to start
 -- with a digit.
@@ -15,31 +13,51 @@ function parse_int(ibuf)
 end
 local parse_int = parse_int
 
+local io_stderr_write = function(str) io.stderr:write(str) end
+
+-- io = require "io"
+local function error_msg (msg)
+  io_stderr_write(msg .. "/n")
+end
+
 -- Import modules
 local buffer = require "buffer"
 local inout  = require "inout"
 local regex  = require "regex"
 
-local io = require "io"			-- only for io.stderr:write :-(
 
 local concat = table.concat
 local format = string.format
 local min    = math.min
 local pcall  = pcall
 
+-- for debugging
 local print  = print
 local tostring = tostring
 
+
+
 module "main_loop"
 
+
 -- Exported data
-def_filename = nil		-- default filename (may be set by ed.lua)
+local def_filename = nil		-- default filename
 
 -- Static data
 local first_addr, second_addr = 0, 0
-local prompt_str = "*"		-- command-line prompt
-local verbose = true		-- print all error messages?
-local prompt_on = true		-- show command-line prompt?
+
+
+local prompt, set_prompt
+do 
+  local prompt_str = "*"		-- command-line prompt
+
+  function prompt()
+    io_stderr_write(prompt_str)
+  end
+  function set_prompt(str)
+    prompt_str = str
+  end
+end
 
 local mark = {}			-- line markers, indexed by 'a'-'z'
 
@@ -61,12 +79,12 @@ local function get_filename(ibuf)
     ibuf = inout.get_extended_line(ibuf, true)
     if not ibuf then return nil end
     if ibuf:match("^!") then
-      errmsg = "Shell commands are not implemented"
+      error_msg "Shell commands are not implemented"
       return nil
     end
   else
     if not def_filename then
-      errmsg = "No current filename"
+      error_msg "No current filename"
       return nil
     end
   end
@@ -76,7 +94,7 @@ local function get_filename(ibuf)
 end
 
 local function invalid_address()
-  errmsg = "Invalid address"
+  error_msg "Invalid address"
   return nil
 end
 
@@ -222,7 +240,7 @@ local function get_command_suffix(ibuf,gflags)
     ibuf = ibuf:sub(2)
   end
   if not ibuf:match("^\n") then
-    errmsg = "Invalid command suffix"
+    error_msg "Invalid command suffix"
     return nil
   end
   ibuf = ibuf:sub(2) -- eat the newline
@@ -231,8 +249,7 @@ end
 
 local function unexpected_address(addr_cnt)
   if addr_cnt > 0 then
-    errmsg = "Unexpected address (addr_cnt = " .. addr_cnt .. ")"
-    error(errmsg)
+    error_msg "Unexpected address"
     return true
   end
   return false
@@ -240,7 +257,7 @@ end
 
 local function unexpected_command_suffix(ibuf)
   if not ibuf:match("^%s") then
-    errmsg = "Unexpected command suffix"
+    error_msg "Unexpected command suffix"
     return true
   end
   return false
@@ -283,19 +300,19 @@ do
 	  ibuf = ibuf:sub(2)
 	else
 	  if #(concat(sflags)) > 0 then
-	    errmsg = "Invalid command suffix 1"
+	    error_msg "Invalid command suffix 1"
 	    return nil
 	  end
 	end
       end
     until #(concat(sflags)) == 0 or ibuf:match("^\n")
     if #(concat(sflags)) > 0 and not prev_pattern then
-      errmsg = "No previous substitution"
+      error_msg "No previous substitution"
       return nil
     end
     if sflags['g'] then snum = nil end	-- 'g' overrides numeric arg
     if ibuf:match("^[^\n]\n") then
-      errmsg = "Invalid pattern delimiter"
+      error_msg "Invalid pattern delimiter"
       return nil
     end
     if #(concat(sflags)) == 0 or sflags['r'] then
@@ -342,9 +359,8 @@ local exec_global
 -- execute the next command in command buffer
 -- return nil on error (was "ERR"), setting errmsg to an error string
 -- "" and the rest of the command buffer on success,
--- "EMOD" on an attempt to quit with an unsaved, modified file,
 -- "QUIT" if we should quit the program.
-local function exec_command(ibuf, isglobal)
+function exec_command(ibuf, isglobal)
   local gflags = {}
   local c		-- command character
   local fnp		-- filename
@@ -387,7 +403,9 @@ local function exec_command(ibuf, isglobal)
     buffer.inc_current_addr()
 
   elseif c:match("[eE]") then	-- 'e' 'E'
-    if c == 'e' and buffer.modified then return "EMOD" end
+    if c == 'e' and buffer.modified then
+      error_msg "Buffer is modified"
+    end
     if unexpected_address(addr_cnt) or
        unexpected_command_suffix(ibuf) then
       return nil
@@ -412,7 +430,7 @@ local function exec_command(ibuf, isglobal)
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     if fnp:match("^!") then
-      errmsg = "Invalid redirection"
+      error_msg "Invalid redirection"
       return nil
     end
     if #fnp > 0 then def_filename=fnp end
@@ -420,7 +438,7 @@ local function exec_command(ibuf, isglobal)
 
   elseif c:match("[gvGV]") then	-- 'g' 'v' 'G' 'V'
     if isglobal then
-      errmsg = "Cannot nest global commands"
+      error_msg "Cannot nest global commands"
       return nil
     end
     local n = (c == 'g') or (c == 'G')
@@ -442,10 +460,9 @@ local function exec_command(ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
-    if c == 'H' then verbose = not verbose end
-    if (c == 'h' or verbose) and errmsg then
-      print(errmsg)
-    end
+    error_msg "Lua ed. GNU ed with Lua 5.1 search and replace patterns.\
+Translated from the C by Martin Guy, March 2011.\
+See the manual page for GNU ed."
 
   elseif c == 'i' then
     if second_addr == 0 then second_addr = 1 end
@@ -492,21 +509,27 @@ local function exec_command(ibuf, isglobal)
     addr,ibuf = get_third_addr(ibuf)
     if not addr then return nil end
     if addr >= first_addr and addr < second_addr then
-      errmsg = "Invalid destination"  return nil
+      error_msg "Invalid destination"  return nil
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     -- UNDO
     buffer.move_lines(first_addr, second_addr, addr, isglobal)
 
-  elseif c:match("[PqQ]") then	-- 'P' 'q' 'Q'
+  elseif c == 'P' then
+    if unexpected_command_suffix(ibuf) then return nil end
+    prompt_str,ibuf = get_filename(ibuf)
+    if not prompt_str then prompt_str = "" end
+
+  elseif c:match("[qQ]") then	-- 'q' 'Q'
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     if c == 'P' then
-      prompt_on = not prompt_on
+      --TODO: set prompt string with P >>>
     elseif (buffer.modified and c == 'q') then
-      return "EMOD"
+      error_msg "Buffer is modified"
+      return nil
     else
       return "QUIT"
     end
@@ -542,7 +565,7 @@ local function exec_command(ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
-    errmsg = "Undo not implemented"
+    error_msg "Undo not implemented"
     return nil
 
   elseif c:match("[wW]") then	-- 'w' 'W'
@@ -564,7 +587,8 @@ local function exec_command(ibuf, isglobal)
     if addr == buffer.last_addr then
       buffer.modified = false
     elseif buffer.modified and n == 'q' then
-      return "EMOD"
+      error_msg "Buffer is modified"
+      return nil
     end
     if n:match("[qQ]") then return "QUIT" end
 
@@ -606,7 +630,7 @@ local function exec_command(ibuf, isglobal)
   elseif c == '!' then
     if unexpected_address(addr_cnt) then return nil end
     -- TODO
-    errmsg = "Shell commands are not implemented"
+    error_msg "Shell commands are not implemented"
     return nil
 
   elseif c == '\n' then
@@ -621,7 +645,7 @@ local function exec_command(ibuf, isglobal)
     ibufp = ibufp:match("^[^\n]*\n(.*)$")
 
   else
-    errmsg = "Unknown command"
+    error_msg "Unknown command"
     return nil
   end
 
@@ -661,7 +685,7 @@ function exec_global(ibuf, gflags, interactive)
       ibuf = inout.get_tty_line()
       if not ibuf then return nil end
       if #ibuf == 0 then
-        errmsg = "Unexpected end-of-file";
+        error_msg "Unexpected end-of-file";
 	return nil
       end
       if ibuf == "\n" then	-- do nothing
@@ -669,7 +693,7 @@ function exec_global(ibuf, gflags, interactive)
       end
       if not continue then
         if ibuf == "&\n" then  -- repeat previous cmd
-	  if not cmd then errmsg = "No previous command" return nil end
+	  if not cmd then error_msg "No previous command" return nil end
 	else
 	  ibuf = inout.get_extended_line(ibuf, false)
 	  if not ibuf then return nil end
@@ -694,37 +718,21 @@ function main_loop()
   local status = ""
 
   while true do
-    if status ~= "" and verbose then
-      if not errmsg then
-        io.stderr:write("Empty error message, status=\""..tostring(status).."\"\n")
-      else  --TODO
-        io.stderr:write(format("%s\n", errmsg))
-      end
-    end
-    if prompt_on then
-      io.write(prompt_str)
-    end
+    prompt(prompt_str)
     ibuf = inout.get_tty_line()
     if not ibuf then return nil end
     -- Use pcall in the hope that bugs don't lose the editor session
     local ok
-if true then
+if die_on_errors then
     status,ibuf = exec_command(ibuf, false)
 else
     ok,status,ibuf = pcall(exec_command, ibuf, false)
     if not ok then
-      print("Command died: "..status)
+      error_msg("Command died: " .. status)
       print("Returning to ed command prompt... this may or may not work...")
-      errmsg = status  status=nil
     end
-end
-    if status == "QUIT" then
-      return
-    elseif status == "EMOD" then
-      io.stderr:write("?\n")
-      errmsg = "Warning: buffer modified"
-    elseif not status then  -- was "ERR"
-      io.stderr:write("?\n")
-    end
+end  -- die_on_errors
+    if status == "QUIT" then return end
+    if not status then error_msg "?" end
   end
 end
