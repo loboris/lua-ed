@@ -1,0 +1,17 @@
+- ed foo\ne wordw\ne words  says "Warning: buffer modified".  - ed1.5 bug
+- ed\ne foo also says "Buffer modified".
+- End-of-file as command input always quits without checking whether the
+  buffer has been modified (in ed, you have to hit ^D twice to quit)
+- ed "foo"
+  No such file or directory
+  a
+  bar
+  .
+  w
+  No current filename
+
+TODO
+- implement hierarchical module structure in a dir with init.lua
+- prev_status for EMOD bugfix (or rewrite the error handling)
+- Implement shell escapes/piping (search for '!')
+- Implement undo
