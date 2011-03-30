@@ -12,6 +12,7 @@
 
 TODO
 - implement hierarchical module structure in a dir with init.lua
-- prev_status for EMOD bugfix (or rewrite the error handling)
+- eliminate get_tty_line() from regex.lua
 - Implement shell escapes/piping (search for '!')
 - Implement undo
+

@@ -1,24 +1,21 @@
 -- mainloop.lua: Main loop of a version of "ed" in Lua.
 
--- Error message handling: set_error_msg () is called by regex.lua and buffer.lua
 
--- parse a positive integer from the buffer, which is guaranteed to start
--- with a digit.
--- Return it's value and the rest of the buffer
--- Also used by regex.lua
+-- First, two utility functions used by the other modules
+
+-- Parse a positive integer from the buffer, which is guaranteed to start
+-- with a digit.  Return it's value and the rest of the buffer
 function parse_int(ibuf)
   local n
   n,ibuf = ibuf:match("^(%d+)(.*)$")
   return tonumber(n), ibuf
 end
-local parse_int = parse_int
 
-local io_stderr_write = function(str) io.stderr:write(str) end
-
--- io = require "io"
-local function error_msg (msg)
-  io_stderr_write(msg .. "/n")
+-- Print an error message
+function error_msg (msg)
+  io.stderr:write(msg .. "\n")
 end
+
 
 -- Import modules
 local buffer = require "buffer"
@@ -26,24 +23,14 @@ local inout  = require "inout"
 local regex  = require "regex"
 
 
-local concat = table.concat
-local format = string.format
-local min    = math.min
-local pcall  = pcall
-
--- for debugging
-local print  = print
-local tostring = tostring
-
-
-
-module "main_loop"
+local M = {}		-- the module table
 
 
 -- Exported data
-local def_filename = nil		-- default filename
+M.def_filename = nil		-- default filename
 
--- Static data
+
+-- Static local data
 local first_addr, second_addr = 0, 0
 
 
@@ -52,20 +39,20 @@ do
   local prompt_str = "*"		-- command-line prompt
 
   function prompt()
-    io_stderr_write(prompt_str)
+    io.stderr:write(prompt_str)
   end
   function set_prompt(str)
     prompt_str = str
   end
 end
 
-local mark = {}			-- line markers, indexed by 'a'-'z'
 
 -- Drop all space characters from the start of a string (which is always ibuf)
 -- except for newline
 local function skip_blanks(s)
   return s:match("^[ \f\r\t\v]*(.*)$");
 end
+
 
 -- return a copy of the filename in the command buffer,
 -- modifying ibuf to skip blanks and the filename.
@@ -83,7 +70,7 @@ local function get_filename(ibuf)
       return nil
     end
   else
-    if not def_filename then
+    if not M.def_filename then
       error_msg "No current filename"
       return nil
     end
@@ -99,6 +86,7 @@ local function invalid_address()
 end
 
 -- Variable used by extract_addr_range and set by next_addr
+local extract_addr_range	-- forward declaration
 do
   local addr_cnt
 
@@ -193,6 +181,7 @@ do
     end
     return addr_cnt,ibuf   -- zero or more addresses extracted
   end
+  M.extract_addr_range = extract_addr_range
 
 end
 
@@ -263,6 +252,7 @@ local function unexpected_command_suffix(ibuf)
   return false
 end
 
+local command_s		-- forward declaration
 do
   -- static data for 's' command
   local gflags = {}		-- Persistent flags for substitution commands
@@ -285,7 +275,7 @@ do
     local sflags = {}
 
     -- First, handle the 1,5s form with optional integer and [gpr] suffixes
-    -- In the following code, "#(sflags:concat()) > 0" means it was this form
+    -- In the following code, "#(sflags:table.concat()) > 0" means it was this form
     -- to repeat a previous substitution.
     repeat
       if ibuf:match("^%d") then
@@ -299,14 +289,14 @@ do
 	  sflags[ch] = true
 	  ibuf = ibuf:sub(2)
 	else
-	  if #(concat(sflags)) > 0 then
+	  if #(table.concat(sflags)) > 0 then
 	    error_msg "Invalid command suffix 1"
 	    return nil
 	  end
 	end
       end
-    until #(concat(sflags)) == 0 or ibuf:match("^\n")
-    if #(concat(sflags)) > 0 and not prev_pattern then
+    until #(table.concat(sflags)) == 0 or ibuf:match("^\n")
+    if #(table.concat(sflags)) > 0 and not prev_pattern then
       error_msg "No previous substitution"
       return nil
     end
@@ -315,12 +305,12 @@ do
       error_msg "Invalid pattern delimiter"
       return nil
     end
-    if #(concat(sflags)) == 0 or sflags['r'] then
+    if #(table.concat(sflags)) == 0 or sflags['r'] then
       -- BUG?: don't understand this. 'r' should use last search regex
       ibuf = regex.new_compiled_pattern(ibuf)
       if not ibuf then return nil end
     end
-    if #(concat(sflags)) == 0 then
+    if #(table.concat(sflags)) == 0 then
       gflags,snum,ibuf = regex.extract_subst_tail(ibuf, isglobal)
       if not ibuf then return nil end
     end
@@ -360,6 +350,7 @@ local exec_global
 -- return nil on error (was "ERR"), setting errmsg to an error string
 -- "" and the rest of the command buffer on success,
 -- "QUIT" if we should quit the program.
+local
 function exec_command(ibuf, isglobal)
   local gflags = {}
   local c		-- command character
@@ -413,10 +404,9 @@ function exec_command(ibuf, isglobal)
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     buffer.delete_lines(1, buffer.last_addr, isglobal)  --TODO clear_buffer()
-    --buffer.clear_yank_buffer()  -- without this we can yank/put across files
     -- UNDO buffer.clear_undo_stack()
-    if #fnp > 0 then def_filename = fnp end	-- SHELL
-    if not inout.read_file(#fnp > 0 and fnp or def_filename, 0) then
+    if #fnp > 0 then M.def_filename = fnp end	-- SHELL
+    if not inout.read_file(#fnp > 0 and fnp or M.def_filename, 0) then
       return nil
     end
     --UNDO
@@ -433,8 +423,8 @@ function exec_command(ibuf, isglobal)
       error_msg "Invalid redirection"
       return nil
     end
-    if #fnp > 0 then def_filename=fnp end
-    print(def_filename)
+    if #fnp > 0 then M.def_filename=fnp end
+    print(M.def_filename)
 
   elseif c:match("[gvGV]") then	-- 'g' 'v' 'G' 'V'
     if isglobal then
@@ -540,8 +530,8 @@ See the manual page for GNU ed."
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     --UNDO
-    if not def_filename then --or SHELL
-      def_filename = fnp
+    if not M.def_filename then --or SHELL
+      M.def_filename = fnp
     end
     addr = inout.read_file(fnp, second_addr)
     if not addr then return nil end
@@ -579,8 +569,8 @@ See the manual page for GNU ed."
     elseif not check_addr_range(1, buffer.last_addr, addr_cnt) then
       return nil
     end
-    if not def_filename then def_filename = fnp end
-    addr = inout.write_file(#fnp > 0 and fnp or def_filename,
+    if not M.def_filename then M.def_filename = fnp end
+    addr = inout.write_file(#fnp > 0 and fnp or M.def_filename,
 			    (c == 'W') and "a" or "w",
 			    first_addr, second_addr)
     if not addr then return nil end
@@ -618,7 +608,7 @@ See the manual page for GNU ed."
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     inout.display_lines(second_addr,
-    		  min(buffer.last_addr, second_addr + inout.window_lines),
+    		  math.min(buffer.last_addr, second_addr + inout.window_lines),
 		  gflags)
     gflags = {}
   
@@ -649,12 +639,13 @@ See the manual page for GNU ed."
     return nil
   end
 
-  if #(concat(gflags)) > 0 then
+  if #(table.concat(gflags)) > 0 then
      inout.display_lines(buffer.current_addr, buffer.current_addr, gflags)
   end
 
   return "", ibuf
 end
+M.exec_command = exec_command
 
 -- apply command list in the command buffer to active lines in a range.
 -- Return nil on errors, true otherwise, plus the remainder of ibuf on success
@@ -712,7 +703,9 @@ function exec_global(ibuf, gflags, interactive)
   end
   return true, ibuf
 end
+M.exec_global = exec_global
 
+local
 function main_loop()
   local ibuf = nil		-- ed command-line string
   local status = ""
@@ -733,6 +726,10 @@ else
     end
 end  -- die_on_errors
     if status == "QUIT" then return end
-    if not status then error_msg "?" end
+    if not status then error_msg "?" end	-- ? is traditional!
   end
 end
+M.main_loop = main_loop
+
+
+return M		-- end of module

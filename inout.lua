@@ -4,31 +4,18 @@
 -- TODO: reimplement internals using Lua model of lines without trailing newline
 -- TODO: reimplement using file:lines iterator
 
--- Preserve global functions from parent modules
-local parse_int = parse_int             -- from main_loop
-
-local function error_msg (msg)
-  local io = require "io"
-  io.stderr.write(msg .. "/n")
-end
 
 -- Import child modules
 local buffer = require "buffer" 
 
--- Preserve functions from standard libraries
-local ioopen = io.open
-local ioread = io.read
-local iowrite = io.write
-local format = string.format
-local byte = string.byte
-local assert = assert
-local print = print
 
-module "inout"
+local M = {}		-- the module table
+
 
 -- Screen width/height, also set/used by main_loop.lua
-window_lines = 24
-window_columns = 72
+M.window_lines = 24
+M.window_columns = 72
+
 
 -- print text to stdout, applying the conversion flags set in "gflags".
 -- gflags['n'] - number the lines
@@ -46,11 +33,11 @@ local function put_tty_line(p, gflags)
   local col = 0		-- How many chars have we output on this line?
 
   if gflags['n'] then
-    iowrite(format("%d\t", buffer.current_addr))
+    io.write(string.format("%d\t", buffer.current_addr))
     col = 8
   end
   if not gflags['l'] then
-    iowrite(p)
+    io.write(p)
   else
     for ch in p:gmatch(".") do
       -- replace a special char with its escape sequence
@@ -59,33 +46,33 @@ local function put_tty_line(p, gflags)
       -- Note: \000 is broken in Lua 5.1.4 (fixed in 5.2)
       ch = ch:gsub("([\001-\031\127-\255])",
     	       function(c)
-    		 return "\\" .. format("%03d", byte(c))
+    		 return "\\" .. string.format("%03d", string.byte(c))
 	       end)
       -- Unlike ed, we do not overflow the 72nd column on escaped characters
       -- also, when numbering lines we indent all continuation lines to match
-      if col + #ch > window_columns then
-        iowrite("\\\n") col = 0
+      if col + #ch > M.window_columns then
+        io.write("\\\n") col = 0
 	if gflags['n'] then
-	  iowrite("\t") col = 8
+	  io.write("\t") col = 8
 	end
       end
-      iowrite(ch)       col = col + #ch
+      io.write(ch)       col = col + #ch
     end
   end
   if gflags['l'] then
-    iowrite("$")
+    io.write("$")
   end
-  iowrite("\n")
+  io.write("\n")
 end
 
-function display_lines(from, to, gflags)
+local function display_lines(from, to, gflags)
   local ep = buffer.search_line_node(buffer.inc_addr(to))
   local bp = buffer.search_line_node(from)
 
   if from == 0 then
     -- I don't believe this can happen.
     error_msg "Invalid address"
-    iowrite "Impossible error in display_lines\n"
+    io.write "Impossible error in display_lines\n"
     return
   end
 
@@ -97,6 +84,7 @@ function display_lines(from, to, gflags)
     bp = bp.forw
   end
 end
+M.display_lines = display_lines
 
 -- return the parity of escapes at the end of a string
 local function trailing_escape(s)
@@ -114,7 +102,7 @@ end
 -- Return the new buffer (either the same or extended with extra lines)
 -- or nil on errors
 
-function get_extended_line(ibuf, strip_escaped_newlines)
+local function get_extended_line(ibuf, strip_escaped_newlines)
 
   -- DEBUG: I think the buffer should always be a single line terminated
   -- by a newline
@@ -148,17 +136,19 @@ function get_extended_line(ibuf, strip_escaped_newlines)
   end
   return ibuf
 end
+M.get_extended_line = get_extended_line
 
 -- read a line of text from stdin and return it or nil on error/EOF
-function get_tty_line()
-  -- TODO: ioread() returns the line without its newline character.
+local function get_tty_line()
+  -- TODO: io.read() returns the line without its newline character.
   -- TODO: Handle the input char by char, failing if ^C is entered
-  local line = ioread()
+  local line = io.read()
   if not line then
     return nil
   end
   return line .. "\n"
 end
+M.get_tty_line = get_tty_line
 
 -- Read a line of text from a file object.
 -- Return the line terminated by a newline
@@ -193,13 +183,13 @@ end
 
 -- read a named file/pipe into the buffer
 -- return number of lines read or nil on error
-function read_file(filename, addr)
+local function read_file(filename, addr)
   local fp,err
   if filename:match("^!") then
     error_msg "Shell escapes are not implemented"
     return nil
   else
-    fp,err = ioopen(filename)
+    fp,err = io.open(filename)
   end
   if not fp then
     error_msg(err)
@@ -210,12 +200,13 @@ function read_file(filename, addr)
     return nil
   end
   fp:close()
-  iowrite(format("%d\n", size))
+  io.write(string.format("%d\n", size))
   return buffer.current_addr - addr
 end
+M.read_file = read_file
 
 -- write a range of lines to a stream
--- Return number of bytes written or nil on error
+-- Return number of byte written or nil on error
 
 local function write_stream(fp, from, to)
   local lp = buffer.search_line_node(from)
@@ -236,7 +227,7 @@ end
 
 -- write a range of lines to a named file/pipe
 -- return line count or nil on error
-function write_file(filename, mode, from, to)
+local function write_file(filename, mode, from, to)
   local fp, size
 
   if filename:match("^!") then
@@ -244,7 +235,7 @@ function write_file(filename, mode, from, to)
     return nil
   else
     -- TODO strip_escapes(filename)
-    fp = ioopen(filename, mode)
+    fp = io.open(filename, mode)
   end
   if not fp then
     error_msg "Cannot open output file"
@@ -255,6 +246,9 @@ function write_file(filename, mode, from, to)
   if not fp:close() then
     error_msg "Error closing output file"
   end
-  iowrite(format("%d\n", size))
+  io.write(string.format("%d\n", size))
   return (from ~= 0 and from <= to) and (to - from + 1) or 0
 end
+M.write_file = write_file
+
+return M

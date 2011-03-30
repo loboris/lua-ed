@@ -1,24 +1,17 @@
 -- ed.regex.lua - the pattern-matching and substituting part of
 -- a version of "ed" in Lua.  Uses Lua patterns and substitutions, not regex.
 
-local error_msg = set_error_msg	-- from main_loop
-local parse_int = parse_int 		-- from main_loop
+local M = {}		-- the module table
+
 
 local buffer = require "buffer"
 local inout = require "inout"		-- only for get_tty_line :-(
-local pcall = pcall
 
-local print,tostring = print,tostring -- DEBUG
 
-local function error_msg (msg)
-  local io = require "io"
-  io.stderr.write(msg .. "/n")
-end
-
-module "regex"
-
+-- Static local data
 local stbuf = nil	-- substitution template buffer
 local global_pat = nil	-- the last pattern we matched
+
 
 local function prev_pattern()
   return global_pat and true or false
@@ -82,7 +75,7 @@ end
 -- Add lines matching (or not matching) a pattern to the global-active list.
 -- Returns the command buffer starting at the closing delimiter on success
 -- or nil on failure.
-function build_active_list(ibuf, first_addr, second_addr, match)
+local function build_active_list(ibuf, first_addr, second_addr, match)
   local delimiter = ibuf:sub(1,1)
   local pat, lp
 
@@ -106,6 +99,7 @@ function build_active_list(ibuf, first_addr, second_addr, match)
   end
   return ibuf
 end
+M.build_active_list = build_active_list
 
 -- return a copy of the substitution template in the command buffer
 -- Dumps the substitution template in stbuf and returns the remainder of the
@@ -142,6 +136,7 @@ end
 -- extract subtitution tail from the command buffer
 -- Returns the flags (or nil on failure), the number of substitutions to make
 -- and the rest of the command buffer (probably just newline)
+local
 function extract_subst_tail(ibuf, isglobal)
   local delimiter = ibuf:sub(1,1)
   local gflags, snum = {}, nil
@@ -173,12 +168,14 @@ function extract_subst_tail(ibuf, isglobal)
 
   return gflags,snum,ibuf
 end
+M.extract_subst_tail = extract_subst_tail
 
 -- return the address of the next line matching a pattern in a given
 -- direction. wrap around begin/end of editor buffer if necessary.
 -- "forward" is boolean, saying whether we should search forwards or
 -- backward.
 -- Returns a line number (or nil on failure) and the rest of ibuf.
+local
 function next_matching_node_addr(ibuf, forward)
   local pat
   pat,ibuf = get_compiled_pattern(ibuf)
@@ -204,9 +201,11 @@ function next_matching_node_addr(ibuf, forward)
   error_msg "No match"
   return nil
 end
+M.next_matching_node = next_matching_node
 
 -- Parse a pattern from ibuf and store it in global_pat.
 -- Returns the rest of ibuf, or nil on failure
+local
 function new_compiled_pattern(ibuf)
   local tpat
   tpat,ibuf = get_compiled_pattern(ibuf)
@@ -216,6 +215,7 @@ function new_compiled_pattern(ibuf)
   end
   return nil
 end
+M.new_compiled_pattern = new_compiled_pattern
 
 -- replace text matches by the pattern in global_pat according to the
 -- substitution template in stbuf.
@@ -248,6 +248,7 @@ end
 -- a substitution template; return true if successful, false on errors
 -- Not finding the searched-for text in any line is an error.
 
+local
 function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
   local lc
   local match_found = false
@@ -273,3 +274,6 @@ function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
   end
   return true
 end
+M.search_and_replace = search_and_replace
+
+return M
