@@ -86,23 +86,36 @@ local function display_lines(from, to, gflags)
 end
 M.display_lines = display_lines
 
--- return the parity of escapes at the end of a string
-local function trailing_escape(s)
-  local odd_escape = false
-  s = s:gsub("\n$", "")
-  while s:match("\\$") do
-    odd_escape = not odd_escape
-    s = s:sub(1,-2)
+-- read a line of text from stdin and return it or nil on error/EOF
+local function get_tty_line()
+  -- TODO: io.read() returns the line without its newline character.
+  -- TODO: Handle the input char by char, failing if ^C is entered
+  local line = io.read()
+  if not line then
+    return nil
   end
-  return odd_escape
+  return line .. "\n"
 end
+M.get_tty_line = get_tty_line
 
+-- get_extended_line()
 -- If *ibufpp contains an escaped newline, get an extended line (one
 -- with escaped newlines) from stdin.
 -- Return the new buffer (either the same or extended with extra lines)
 -- or nil on errors
 
 local function get_extended_line(ibuf, strip_escaped_newlines)
+
+  -- return the parity of escapes at the end of a string
+  local function trailing_escape(s)
+    local odd_escape = false
+    s = s:gsub("\n$", "")
+    while s:match("\\$") do
+      odd_escape = not odd_escape
+      s = s:sub(1,-2)
+    end
+    return odd_escape
+  end
 
   -- DEBUG: I think the buffer should always be a single line terminated
   -- by a newline
@@ -138,32 +151,22 @@ local function get_extended_line(ibuf, strip_escaped_newlines)
 end
 M.get_extended_line = get_extended_line
 
--- read a line of text from stdin and return it or nil on error/EOF
-local function get_tty_line()
-  -- TODO: io.read() returns the line without its newline character.
-  -- TODO: Handle the input char by char, failing if ^C is entered
-  local line = io.read()
-  if not line then
-    return nil
-  end
-  return line .. "\n"
-end
-M.get_tty_line = get_tty_line
-
--- Read a line of text from a file object.
--- Return the line terminated by a newline
--- "" at EOF or nil on error
-local function read_stream_line(fp)
-  local line = fp:read()
-  if not line then
-    return ""
-  end
-  return line .. "\n"
-end
-
 -- read a stream into the editor buffer after line "addr";
 -- return the number of characters read.
 local function read_stream(fp, addr)
+
+  -- read_stream()
+  -- Read a line of text from a file object.
+  -- Return the line terminated by a newline
+  -- "" at EOF or nil on error
+  local function read_stream_line(fp)
+    local line = fp:read()
+    if not line then
+      return ""
+    end
+    return line .. "\n"
+  end
+
   local lp = buffer.search_line_node(addr)
   local size = 0
   --UNDO

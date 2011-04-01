@@ -15,4 +15,16 @@ TODO
 - eliminate get_tty_line() from regex.lua
 - Implement shell escapes/piping (search for '!')
 - Implement undo
+- Write some templates for our local and exported functions to be able to
+  reploace
+    local function foo() print "Hello" end M.foo = M.foo
+  with 
+    global_function foo() print "Hello" end
+  or something.
 
+  Already,
+    function foo() ... end
+  is really
+    foo = function() ... end
+  but I don't think this kind of syntactic sugar is implementable in Lua;
+  we'd have to modify the interpreter.

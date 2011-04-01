@@ -4,16 +4,38 @@
 -- First, two utility functions used by the other modules
 
 -- Parse a positive integer from the buffer, which is guaranteed to start
--- with a digit.  Return it's value and the rest of the buffer
+-- with a digit.  Return its value and the rest of the buffer
 function parse_int(ibuf)
   local n
   n,ibuf = ibuf:match("^(%d+)(.*)$")
   return tonumber(n), ibuf
 end
 
+-- To be ed-compatible we can set "ed_compatible" to true,
+-- which suppress printing of error messages and prompts.
+local ed_compatible = true
+
+-- Usually we always prints a prompt and error messages.
+-- "verbose" allows this to be toggled with the H command
+local verbose = ed_compatible and false or true
+
+-- To catch the case of things returning nil with a missing error message
+-- we remember whether we just printed an error or not.
+local just_printed_error_msg = nil
+
+-- We remember the last error message that was printed so that we can
+-- implement the 'h' command.
+local last_error_msg = nil
+
 -- Print an error message
 function error_msg (msg)
-  io.stderr:write(msg .. "\n")
+  io.stderr:write((verbose and msg or "?").."\n")
+  just_printed_error_msg = true
+  last_error_msg = msg
+end
+
+local function print_last_error_msg()
+  io.stderr:write(last_error_msg .. "\n")
 end
 
 
@@ -36,10 +58,10 @@ local first_addr, second_addr = 0, 0
 
 local prompt, set_prompt
 do 
-  local prompt_str = "*"		-- command-line prompt
+  local prompt_str = ed_compatible and "" or "*"	-- command-line prompt
 
   function prompt()
-    io.stderr:write(prompt_str)
+    if prompt_str then io.stderr:write(prompt_str) end
   end
   function set_prompt(str)
     prompt_str = str
@@ -54,23 +76,30 @@ local function skip_blanks(s)
 end
 
 
--- return a copy of the filename in the command buffer,
--- modifying ibuf to skip blanks and the filename.
--- returns the filename and the rest of ibuf on success
--- if no filename was supplied, returns ""
--- returns nil on errors (such as EOF from get_tty_line())
-local function get_filename(ibuf)
+-- get_filename()
+-- Extract and return the filename in the command buffer,
+-- skipping leading blanks and eliminating "\\n" sequences.
+-- At entry, the first char in ibuf is the space before the filename
+-- or "\n" if the command was not given a filename parameter.
+-- returns
+  -- the filename and the rest of ibuf on success
+  -- nil on errors (such as EOF from get_tty_line())
+  -- "" if no filename was supplied
+-- The "silent" flag, if true, means don't print error messages and
+-- don't use the default filename. It's used for reading the prompt string
+-- after our P command.
+local function get_filename(ibuf, silent)
   local filename
   ibuf = skip_blanks(ibuf)
   if not ibuf:match("^\n") then
     ibuf = inout.get_extended_line(ibuf, true)
     if not ibuf then return nil end
-    if ibuf:match("^!") then
+    if not silent and ibuf:match("^!") then
       error_msg "Shell commands are not implemented"
       return nil
     end
   else
-    if not M.def_filename then
+    if not silent and not M.def_filename then
       error_msg "No current filename"
       return nil
     end
@@ -347,9 +376,10 @@ end
 local exec_global
 
 -- execute the next command in command buffer
--- return nil on error (was "ERR"), setting errmsg to an error string
--- "" and the rest of the command buffer on success,
--- "QUIT" if we should quit the program.
+-- returns
+   -- nil on error
+   -- "" and the rest of the command buffer on success,
+   -- "QUIT" if we should quit the program due to a q/Q/wq command.
 local
 function exec_command(ibuf, isglobal)
   local gflags = {}
@@ -447,12 +477,14 @@ function exec_command(ibuf, isglobal)
     if not status then return nil end
 
   elseif c:match("[hH]") then	-- 'h' 'H'
+    -- 'h' should print the error message from the last error
+    -- 'H' should toggle the printing of verbose error messages.
+    -- Here, they both just print a generic help message.
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
-    error_msg "Lua ed. GNU ed with Lua 5.1 search and replace patterns.\
-Translated from the C by Martin Guy, March 2011.\
-See the manual page for GNU ed."
+    if c == 'H' then verbose = not verbose end
+    print_last_error_msg()
 
   elseif c == 'i' then
     if second_addr == 0 then second_addr = 1 end
@@ -507,9 +539,13 @@ See the manual page for GNU ed."
     buffer.move_lines(first_addr, second_addr, addr, isglobal)
 
   elseif c == 'P' then
+    -- In GNU ed, P toggles the printing of the prompt.
+    -- Here it turns the prompt off if given alone, or sets it if given
+    -- a filename-style argument (trailing spaces are understood).
     if unexpected_command_suffix(ibuf) then return nil end
-    prompt_str,ibuf = get_filename(ibuf)
-    if not prompt_str then prompt_str = "" end
+    local prompt
+    prompt,ibuf = get_filename(ibuf, true)
+    set_prompt(prompt)
 
   elseif c:match("[qQ]") then	-- 'q' 'Q'
     if unexpected_address(addr_cnt) then return nil end
@@ -705,29 +741,49 @@ function exec_global(ibuf, gflags, interactive)
 end
 M.exec_global = exec_global
 
+-- Read an ed command from the input and execute it.
+-- Returns true unless the editor should quit.
+local function read_and_run_command()
+  local ibuf = nil		-- the command line string
+  local status = ""
+  local ok
+
+  ok,ibuf = pcall(inout.get_tty_line)
+  if not ok then
+    error_msg(ibuf)
+    return true
+  end
+
+  if not ibuf then return nil end	-- EOF or error reading input
+
+  just_printed_error_msg = false
+
+if die_on_errors then
+  -- used in debugging to get a stack backtrace and die on interrupts
+  status,ibuf = exec_command(ibuf, false)
+else
+  -- Use pcall in the hope that bugs don't junk the editor session
+  ok,status,ibuf = pcall(exec_command, ibuf, false)
+  if not ok then
+    error_msg(status)
+    -- print("Returning to ed command prompt... this may or may not work...")
+  end
+end  -- die_on_errors
+
+  -- status=nil means there was some error. Catch bugs where an error code
+  -- is returned but we never printed an error message. Should never happen.
+  if status == nil and not just_printed_error_msg then
+    error_msg "?"
+  elseif status == "QUIT" then
+    return nil
+  end
+
+  return true
+end
+
 local
 function main_loop()
-  local ibuf = nil		-- ed command-line string
-  local status = ""
-
-  while true do
-    prompt(prompt_str)
-    ibuf = inout.get_tty_line()
-    if not ibuf then return nil end
-    -- Use pcall in the hope that bugs don't lose the editor session
-    local ok
-if die_on_errors then
-    status,ibuf = exec_command(ibuf, false)
-else
-    ok,status,ibuf = pcall(exec_command, ibuf, false)
-    if not ok then
-      error_msg("Command died: " .. status)
-      print("Returning to ed command prompt... this may or may not work...")
-    end
-end  -- die_on_errors
-    if status == "QUIT" then return end
-    if not status then error_msg "?" end	-- ? is traditional!
-  end
+  repeat prompt() until not read_and_run_command()
 end
 M.main_loop = main_loop
 

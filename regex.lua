@@ -201,7 +201,7 @@ function next_matching_node_addr(ibuf, forward)
   error_msg "No match"
   return nil
 end
-M.next_matching_node = next_matching_node
+M.next_matching_node_addr = next_matching_node_addr
 
 -- Parse a pattern from ibuf and store it in global_pat.
 -- Returns the rest of ibuf, or nil on failure
