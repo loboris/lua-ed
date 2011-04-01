@@ -16,8 +16,10 @@ end
 local ed_compatible = true
 
 -- Usually we always prints a prompt and error messages.
--- "verbose" allows this to be toggled with the H command
-local verbose = ed_compatible and false or true
+-- "verbose" and "prompt_on" allow these to be toggled
+-- with the H and P commands
+local verbose = not ed_compatible
+local prompt_on = not ed_compatible
 
 -- To catch the case of things returning nil with a missing error message
 -- we remember whether we just printed an error or not.
@@ -35,7 +37,9 @@ function error_msg (msg)
 end
 
 local function print_last_error_msg()
-  io.stderr:write(last_error_msg .. "\n")
+  if last_error_msg then
+    io.stderr:write(last_error_msg .. "\n")
+  end
 end
 
 
@@ -48,24 +52,23 @@ local regex  = require "regex"
 local M = {}		-- the module table
 
 
--- Exported data
-M.def_filename = nil		-- default filename
+-- Persistent local variables
+local def_filename = nil		-- default filename
+local first_addr, second_addr = 0, 0	-- addresses preceding a command letter
 
 
--- Static local data
-local first_addr, second_addr = 0, 0
-
-
-local prompt, set_prompt
+local prompt, set_prompt	--  forward declaration of file-local functions
 do 
-  local prompt_str = ed_compatible and "" or "*"	-- command-line prompt
+  local prompt_str = "*"	-- command-line prompt (and its default)
 
   function prompt()
-    if prompt_str then io.stderr:write(prompt_str) end
+    if prompt_on then io.stderr:write(prompt_str) end
   end
+
   function set_prompt(str)
     prompt_str = str
   end
+
 end
 
 
@@ -85,7 +88,7 @@ end
   -- the filename and the rest of ibuf on success
   -- nil on errors (such as EOF from get_tty_line())
   -- "" if no filename was supplied
--- The "silent" flag, if true, means don't print error messages and
+-- The "silent" flag, if true, means don't generate error messages and
 -- don't use the default filename. It's used for reading the prompt string
 -- after our P command.
 local function get_filename(ibuf, silent)
@@ -99,7 +102,7 @@ local function get_filename(ibuf, silent)
       return nil
     end
   else
-    if not silent and not M.def_filename then
+    if not silent and not def_filename then
       error_msg "No current filename"
       return nil
     end
@@ -281,7 +284,7 @@ local function unexpected_command_suffix(ibuf)
   return false
 end
 
-local command_s		-- forward declaration
+local command_s		-- put command_s in file-local scope
 do
   -- static data for 's' command
   local gflags = {}		-- Persistent flags for substitution commands
@@ -374,33 +377,33 @@ end
 
 -- forward declaration of mutually recursive function
 local exec_global
+-- put exec_command() in file-local scope
+local exec_command
 
--- execute the next command in command buffer
+-- exec_command(ibuf, isglobal)
+-- execute the next command in the command buffer
 -- returns
    -- nil on error
    -- "" and the rest of the command buffer on success,
    -- "QUIT" if we should quit the program due to a q/Q/wq command.
-local
-function exec_command(ibuf, isglobal)
-  local gflags = {}
-  local c		-- command character
-  local fnp		-- filename
+-- Each command's function return the same as exec_command().
+do
+  local gflags = {}	-- persistent flags
   local addr_cnt	-- How many addresses were supplied?
+  local fnp		-- filename temp used by various commands
+  local command = {}	-- table mapping command letters to functions
 
-  addr_cnt,ibuf = extract_addr_range(ibuf)
-  if not addr_cnt then return nil end
-
-  ibuf = skip_blanks(ibuf)
-  c, ibuf = ibuf:match("^(.)(.*)$")
-
-  if c == 'a' then
+  command.a = function(c, ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     -- UNDO
-    ibuf = buffer.append_lines(ibuf, second_addr, isglobal, inout.get_tty_line)
+    ibuf = buffer.append_lines(ibuf, second_addr, isglobal,
+			       inout.get_tty_line)
     if not ibuf then return nil end
+    return "",ibuf
+  end
 
-  elseif c == 'c' then
+  command.c = function(c, ibuf, isglobal)
     if first_addr == 0 then first_addr = 1 end
     if second_addr == 0 then second_addr = 1 end
     if not check_current_addr(addr_cnt) then return nil end
@@ -409,10 +412,12 @@ function exec_command(ibuf, isglobal)
     -- UNDO
     buffer.delete_lines(first_addr, second_addr, isglobal)
     ibuf = buffer.append_lines(ibuf, buffer.current_addr, isglobal,
-                               inout.get_tty_line)
+			       inout.get_tty_line)
     if not ibuf then return nil end
+    return "",ibuf
+  end
 
-  elseif c == 'd' then
+  command.d = function(c, ibuf, isglobal)
     if check_current_addr(addr_cnt) then
       gflags,ibuf = get_command_suffix(ibuf,gflags)
       if not gflags then return nil end
@@ -422,8 +427,10 @@ function exec_command(ibuf, isglobal)
     -- UNDO
     buffer.delete_lines(first_addr, second_addr, isglobal)
     buffer.inc_current_addr()
+    return "",ibuf
+  end
 
-  elseif c:match("[eE]") then	-- 'e' 'E'
+  command.e = function(c, ibuf, isglobal)
     if c == 'e' and buffer.modified then
       error_msg "Buffer is modified"
     end
@@ -435,14 +442,17 @@ function exec_command(ibuf, isglobal)
     if not fnp then return nil end
     buffer.delete_lines(1, buffer.last_addr, isglobal)  --TODO clear_buffer()
     -- UNDO buffer.clear_undo_stack()
-    if #fnp > 0 then M.def_filename = fnp end	-- SHELL
-    if not inout.read_file(#fnp > 0 and fnp or M.def_filename, 0) then
+    if #fnp > 0 then def_filename = fnp end	-- SHELL
+    if not inout.read_file(#fnp > 0 and fnp or def_filename, 0) then
       return nil
     end
     --UNDO
     buffer.modified = false
+    return "",ibuf
+  end
+  command.E = command.e
 
-  elseif c == 'f' then
+  command.f = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) or
        unexpected_command_suffix(ibuf) then
       return nil
@@ -453,10 +463,13 @@ function exec_command(ibuf, isglobal)
       error_msg "Invalid redirection"
       return nil
     end
-    if #fnp > 0 then M.def_filename=fnp end
-    print(M.def_filename)
+    if #fnp > 0 then def_filename=fnp end
+    print(def_filename)
+    return "",ibuf
+  end
 
-  elseif c:match("[gvGV]") then	-- 'g' 'v' 'G' 'V'
+  -- 'g' 'v' 'G' 'V'
+  command.g = function(c, ibuf, isglobal)
     if isglobal then
       error_msg "Cannot nest global commands"
       return nil
@@ -475,8 +488,14 @@ function exec_command(ibuf, isglobal)
     local status
     status,ibuf = exec_global(ibuf, gflags, n)
     if not status then return nil end
+    return "",ibuf
+  end
+  command.v = command.g
+  command.G = command.g
+  command.V = command.g
 
-  elseif c:match("[hH]") then	-- 'h' 'H'
+  -- 'h' 'H'
+  command.h = function(c, ibuf, isglobal)
     -- 'h' should print the error message from the last error
     -- 'H' should toggle the printing of verbose error messages.
     -- Here, they both just print a generic help message.
@@ -485,8 +504,11 @@ function exec_command(ibuf, isglobal)
     if not gflags then return nil end
     if c == 'H' then verbose = not verbose end
     print_last_error_msg()
+    return "",ibuf
+  end
+  command.H = command.h
 
-  elseif c == 'i' then
+  command.i = function(c, ibuf, isglobal)
     if second_addr == 0 then second_addr = 1 end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
@@ -494,8 +516,10 @@ function exec_command(ibuf, isglobal)
     ibuf = buffer.append_lines(ibuf, second_addr - 1, isglobal,
 			       inout.get_tty_line)
     if not ibuf then return nil end
+    return "",ibuf
+  end
 
-  elseif c == 'j' then
+  command.j = function(c, ibuf, isglobal)
     if not check_addr_range(buffer.current_addr, buffer.current_addr + 1,
 			       addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
@@ -504,8 +528,10 @@ function exec_command(ibuf, isglobal)
     if first_addr ~= second_addr then
       buffer.join_lines(first_addr, second_addr, isglobal)
     end
+    return "",ibuf
+  end
 
-  elseif c == 'k' then
+  command.k = function(c, ibuf, isglobal)
     local n
     n, ibuf = ibuf:match("^(.)(.*)$")
     if second_addr == 0 then
@@ -516,16 +542,10 @@ function exec_command(ibuf, isglobal)
        not buffer.mark_line_node(second_addr, n) then
       return nil
     end
-  
-  elseif c:match("[lnp]") then	-- 'l' 'n' 'p'
-    if not check_current_addr(addr_cnt) then return nil end
-    gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
-    gflags[c] = true
-    inout.display_lines(first_addr, second_addr, gflags)
-    gflags = {}
+    return "",ibuf
+  end
 
-  elseif c == 'm' then
+  command.m = function(c, ibuf, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     local addr
     addr,ibuf = get_third_addr(ibuf)
@@ -537,48 +557,76 @@ function exec_command(ibuf, isglobal)
     if not gflags then return nil end
     -- UNDO
     buffer.move_lines(first_addr, second_addr, addr, isglobal)
+    return "",ibuf
+  end
 
-  elseif c == 'P' then
+   -- 'l' 'n' 'p'
+  command.p = function(c, ibuf, isglobal)
+    if not check_current_addr(addr_cnt) then return nil end
+    gflags,ibuf = get_command_suffix(ibuf,gflags)
+    if not gflags then return nil end
+    gflags[c] = true
+    inout.display_lines(first_addr, second_addr, gflags)
+    gflags = {}
+    return "",ibuf
+  end
+  command.l = command.p
+  command.n = command.p
+
+  command.P = function(c, ibuf, isglobal)
     -- In GNU ed, P toggles the printing of the prompt.
-    -- Here it turns the prompt off if given alone, or sets it if given
-    -- a filename-style argument (trailing spaces are understood).
+    -- Here, an optional filename-style argument sets the prompt string
+    -- (and turns prompt-printing on)
     if unexpected_command_suffix(ibuf) then return nil end
     local prompt
     prompt,ibuf = get_filename(ibuf, true)
-    set_prompt(prompt)
+    if prompt == "" then
+      prompt_on = not prompt_on
+    else
+      set_prompt(prompt)
+      prompt_on = true
+    end
+    return "",ibuf
+  end
 
-  elseif c:match("[qQ]") then	-- 'q' 'Q'
+  -- 'q' 'Q'
+  command.q = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
-    if c == 'P' then
-      --TODO: set prompt string with P >>>
-    elseif (buffer.modified and c == 'q') then
+    if (buffer.modified and c == 'q') then
       error_msg "Buffer is modified"
       return nil
     else
       return "QUIT"
     end
+    return "",ibuf
+  end
+  command.Q = command.q
 
-  elseif c == 'r' then
+  command.r = function(c, ibuf, isglobal)
     if unexpected_command_suffix(ibuf) then return nil end
     if addr_cnt == 0 then second_addr = buffer.last_addr end
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     --UNDO
-    if not M.def_filename then --or SHELL
-      M.def_filename = fnp
+    if not def_filename then --or SHELL
+      def_filename = fnp
     end
     addr = inout.read_file(fnp, second_addr)
     if not addr then return nil end
     --if addr > 0 and addr ~= buffer.last_addr then buffer.modified = true end
     if addr > 0 then buffer.modified = true end
+    return "",ibuf
+  end
 
-  elseif c == 's' then
+  command.s = function(c, ibuf, isglobal)
     gflags,ibuf = command_s(ibuf, gflags, addr_cnt, isglobal)
     if not gflags then return nil end
+    return "",ibuf
+  end
 
-  elseif c == 't' then
+  command.t = function(c, ibuf, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     addr,ibuf = get_third_addr(ibuf)
     if not addr then return nil end
@@ -586,15 +634,19 @@ function exec_command(ibuf, isglobal)
     if not gflags then return nil end
     --UNDO
     buffer.copy_lines(first_addr, second_addr, addr)
+    return "",ibuf
+  end
 
-  elseif c == 'u' then
+  command.u = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     error_msg "Undo not implemented"
     return nil
+  end
 
-  elseif c:match("[wW]") then	-- 'w' 'W'
+  -- 'w' 'W'
+  command.w = function(c, ibuf, isglobal)
     local n = ibuf:sub(1,1)
     if n:match("[qQ]") then ibuf = ibuf:sub(2) end
     if unexpected_command_suffix(ibuf) then return nil end
@@ -605,8 +657,8 @@ function exec_command(ibuf, isglobal)
     elseif not check_addr_range(1, buffer.last_addr, addr_cnt) then
       return nil
     end
-    if not M.def_filename then M.def_filename = fnp end
-    addr = inout.write_file(#fnp > 0 and fnp or M.def_filename,
+    if not def_filename then def_filename = fnp end
+    addr = inout.write_file(#fnp > 0 and fnp or def_filename,
 			    (c == 'W') and "a" or "w",
 			    first_addr, second_addr)
     if not addr then return nil end
@@ -617,8 +669,11 @@ function exec_command(ibuf, isglobal)
       return nil
     end
     if n:match("[qQ]") then return "QUIT" end
+    return "",ibuf
+  end
+  command.W = command.w
 
-  elseif c == 'x' then
+  command.x = function(c, ibuf, isglobal)
     if second_addr < 0 or buffer.last_addr < second_addr then
       return invalid_address()
     end
@@ -626,17 +681,21 @@ function exec_command(ibuf, isglobal)
     if not gflags then return nil end
     --UNDO
     if not buffer.put_lines(second_addr) then return nil end
+    return "",ibuf
+  end
 
-  elseif c == 'y' then
+  command.y = function(c, ibuf, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     buffer.yank_lines(first_addr, second_addr)
+    return "",ibuf
+  end
 
-  elseif c == 'z' then
+  command.z = function(c, ibuf, isglobal)
     first_addr = 1
     if not check_addr_range(first_addr,
-                            buffer.current_addr + (isglobal and 0 or 1),
+			    buffer.current_addr + (isglobal and 0 or 1),
 			    addr_cnt) then return nil end
     if ibuf:match("^%d") then
       inout.window_lines,ibuf = parse_int(ibuf)
@@ -644,49 +703,80 @@ function exec_command(ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     inout.display_lines(second_addr,
-    		  math.min(buffer.last_addr, second_addr + inout.window_lines),
-		  gflags)
+			math.min(buffer.last_addr,
+				 second_addr + inout.window_lines),
+			gflags)
     gflags = {}
+    return "",ibuf
+  end
   
-  elseif c == '=' then
+  command['='] = function(c, ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not gflags then return nil end
     print( (addr_cnt > 0) and second_addr or buffer.last_addr )
+    return "",ibuf
+  end
 
-  elseif c == '!' then
+  command['!'] = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     -- TODO
     error_msg "Shell commands are not implemented"
     return nil
+  end
 
-  elseif c == '\n' then
+  command['\n'] = function(c, ibuf, isglobal)
     first_addr = 1
     if not check_addr_range(first_addr,
-    			    buffer.current_addr + (isglobal and 0 or 1),
+			    buffer.current_addr + (isglobal and 0 or 1),
 			    addr_cnt) then return nil end
     inout.display_lines(second_addr, second_addr, {})
-
-  elseif c == '#' then
-    -- Discard up to first newline
-    ibufp = ibufp:match("^[^\n]*\n(.*)$")
-
-  else
-    error_msg "Unknown command"
-    return nil
+    return "",ibuf
   end
 
-  if #(table.concat(gflags)) > 0 then
-     inout.display_lines(buffer.current_addr, buffer.current_addr, gflags)
+  command['#'] = function(c, ibuf, isglobal)
+    -- Discard up to first newline.
+    -- If there is no newline, match returns nil (discarding the whole line)
+    ibuf = ibuf:match("^[^\n]*\n(.*)$")
+
+    -- EOF in the middle of a line is not normal.
+    if not ibuf then return nil end
+
+    return "",ibuf
   end
 
-  return "", ibuf
+  function exec_command(ibuf, isglobal)
+    local c		-- command character
+
+    addr_cnt,ibuf = extract_addr_range(ibuf)
+    if not addr_cnt then return nil end
+
+    ibuf = skip_blanks(ibuf)
+    c, ibuf = ibuf:match("^(.)(.*)$")
+
+    if command[c] then
+      return command[c](c, ibuf, isglobal)
+    else
+      error_msg "Unknown command"
+      return nil
+    end
+
+    -- When does this test come into play?
+    if #(table.concat(gflags)) > 0 then
+       inout.display_lines(buffer.current_addr, buffer.current_addr, gflags)
+    end
+
+    return "", ibuf
+  end
+
 end
 M.exec_command = exec_command
 
 -- apply command list in the command buffer to active lines in a range.
 -- Return nil on errors, true otherwise, plus the remainder of ibuf on success
 -- Function is local with forward declaration above exec_command
-function exec_global(ibuf, gflags, interactive)
+
+
+--[[local]] function exec_global(ibuf, gflags, interactive)
   local cmd = nil	-- last command that was applied globally
 			-- (used in interactive mode's "&" command)
 
@@ -757,6 +847,8 @@ local function read_and_run_command()
   if not ibuf then return nil end	-- EOF or error reading input
 
   just_printed_error_msg = false
+
+local die_on_errors = true
 
 if die_on_errors then
   -- used in debugging to get a stack backtrace and die on interrupts

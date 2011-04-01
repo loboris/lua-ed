@@ -204,7 +204,9 @@ end
 M.next_matching_node_addr = next_matching_node_addr
 
 -- Parse a pattern from ibuf and store it in global_pat.
--- Returns the rest of ibuf, or nil on failure
+-- Returns the rest of ibuf, or nil on failure.
+-- "new_compiled_pattern" is the name of the corresponding GNU ed function;
+-- here we use Lua patterns so the "compiled" form is the same as the pattern.
 local
 function new_compiled_pattern(ibuf)
   local tpat
