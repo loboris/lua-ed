@@ -117,11 +117,6 @@ local function get_extended_line(ibuf, strip_escaped_newlines)
     return odd_escape
   end
 
-  -- DEBUG: I think the buffer should always be a single line terminated
-  -- by a newline
-  assert(ibuf:match("^[^\n]*\n$"),
-  	 "get_extended_newline was not passed a single line")
-
   if #ibuf < 2 or not trailing_escape(ibuf) then
     return ibuf
   end
@@ -203,7 +198,7 @@ local function read_file(filename, addr)
     return nil
   end
   fp:close()
-  io.write(string.format("%d\n", size))
+  if not scripted then io.write(string.format("%d\n", size)) end
   return buffer.current_addr - addr
 end
 M.read_file = read_file
@@ -249,7 +244,7 @@ local function write_file(filename, mode, from, to)
   if not fp:close() then
     error_msg "Error closing output file"
   end
-  io.write(string.format("%d\n", size))
+  if not scripted then io.write(string.format("%d\n", size)) end
   return (from ~= 0 and from <= to) and (to - from + 1) or 0
 end
 M.write_file = write_file

@@ -6,7 +6,13 @@
   last ^D.
 - A second "q" after "q"->"Buffer modified" should quit ed.
   This version refuses ever to quit with q if buffer modified.
-
+- Reading a line containing a NUL character get truncated at the NUL.
+  (due to Lua 5.1 bug in the string library)
+- The pattern cannot contain the search pattern delimiter,
+  which should be able to occur inside character ranges "/[/]/
+  or if quoted (with \/ or maybe %/).
+- At EOF, the Unix version should exit with non-zero exit status
+  if any kind of error has occured during the run.
 
 TODO
 - implement hierarchical module structure in a dir with init.lua
@@ -22,3 +28,8 @@ TODO
   - suppresses printing of "!\n" after a ! command's return from the system
   - checking of buffer being modified is also bypassed when EOF is received
     as command input
+- Can we use string.gmatch() to implement ed's meaning for s/a/b/3
+  which is to replace the third occurrence of a, not the first three?
+  See line 1 of test s2.t
+- Crazy stuff in s3.t
+- implement backslash-escaping within pattern? see test s4.red

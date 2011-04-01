@@ -18,6 +18,7 @@ local ed_compatible = false
 -- Usually we always prints a prompt and error messages.
 -- "verbose" and "prompt_on" allow these to be toggled
 -- with the H and P commands
+-- and to disable them by default when running scripted
 local verbose = not ed_compatible
 local prompt_on = not ed_compatible
 
@@ -31,8 +32,8 @@ local last_error_msg = nil
 
 -- Print an error message
 function error_msg (msg)
-  if not msg then 	-- DEBUG
-    io.stderr:write("Error message is nil|\n")
+  if not msg then 	-- Should never happen
+    io.stderr:write("Empty error message!\n")
     return
   end
   if verbose then
@@ -260,12 +261,13 @@ end
 
 -- get_command_suffix()
 -- verify the command suffix in the command buffer.
--- gflags is a set: if gflags["l"], then l is set.
+-- gflags is a set: if gflags["l"] is not nil, then flag 'l' is set.
 -- returns the new value of gflags and the rest of ibuf on success
 -- or the original value of gflags and nil on failure
 local function get_command_suffix(ibuf,gflags)
   while ibuf:match("^[lnp]") do
-    gflags[ibuf:sub(1,1)] = true
+    local flag = ibuf:sub(1,1)
+    gflags[flag] = true
     ibuf = ibuf:sub(2)
   end
   if not ibuf:match("^\n") then
@@ -292,6 +294,15 @@ local function unexpected_command_suffix(ibuf)
   return false
 end
 
+-- Are any flags set in the given set?
+-- Could be local to command_s and exec_*
+local function flags_are_set(flags)
+  for i,v in pairs(flags) do
+    return true
+  end
+  return false
+end
+
 local command_s		-- put command_s in file-local scope
 do
   -- static data for 's' command
@@ -300,7 +311,6 @@ do
 	-- [pnl] line-printing flags: print, numerate, list
 	-- 'g'	 The trailing 'g' flag to substitute all occurrences in a line
   local snum = 0		-- which occurrence to substitute (s2/a/b)
-  local prev_pattern = nil	-- the last pattern we matched
 
   -- execute substitution command
   -- returning the new value of gflagsp and the rest of ibuf on success
@@ -312,11 +322,12 @@ do
     -- 'p'  complement previous print suffix
     -- 'r'  use last regex instead of last pattern
     -- 'f'  repeat last substitution ("1,$s")
+    -- To set a flag, use sflags[flag] = true
     local sflags = {}
 
     -- First, handle the 1,5s form with optional integer and [gpr] suffixes
-    -- In the following code, "#(sflags:table.concat()) > 0" means it was this form
-    -- to repeat a previous substitution.
+    -- In the following code, "flags_are_set(sflags)" means the command
+    -- had this form to repeat the previous substitution.
     repeat
       if ibuf:match("^%d") then
 	snum,ibuf = parse_int(ibuf)
@@ -329,15 +340,15 @@ do
 	  sflags[ch] = true
 	  ibuf = ibuf:sub(2)
 	else
-	  if #(table.concat(sflags)) > 0 then
+	  if flags_are_set(sflags) then
 	    -- Can this ever happen?
 	    error_msg "Invalid command suffix"
 	    return nil
 	  end
 	end
       end
-    until #(table.concat(sflags)) == 0 or ibuf:match("^\n")
-    if #(table.concat(sflags)) > 0 and not prev_pattern then
+    until not flags_are_set(sflags) or ibuf:match("^\n")
+    if flags_are_set(sflags) and not regex.prev_pattern() then
       error_msg "No previous substitution"
       return nil
     end
@@ -346,27 +357,30 @@ do
       error_msg "Invalid pattern delimiter"
       return nil
     end
-    if #(table.concat(sflags)) == 0 or sflags['r'] then
-      -- BUG?: don't understand this. 'r' should use last search regex
+    -- BUG?: I don't understand this. 'r' should use last search regex
+    -- instead of the LHS of the last substitution
+    -- but *this* seems to be what the ed-1.5 source says.
+    if not flags_are_set(sflags) or sflags['r'] then
       ibuf = regex.new_compiled_pattern(ibuf)
       if not ibuf then return nil end
     end
-    if #(table.concat(sflags)) == 0 then
+    if not flags_are_set(sflags) then
       gflags,snum,ibuf = regex.extract_subst_tail(ibuf, isglobal)
-      if not ibuf then return nil end
+      if not gflags then return nil end
     end
-    gflags["b"] = isglobal
-    if sflags["g"] then gflags["g"] = not gflags["g"] end
-    if sflags["p"] then
-      gflags["p"] = not gflags["p"]
-      gflags["l"] = nil
-      gflags["n"] = nil
+    gflags['b'] = isglobal and true or nil
+    if sflags['g'] then
+      gflags['g'] = (not gflags['g']) and true or nil	-- invert gflags['g']
+    end
+    if sflags['p'] then
+      gflags['p'] = (not gflags['p']) and true or nil	-- invert gflags['p']
+      gflags['l'] = nil
+      gflags['n'] = nil
     end
     if ibuf:match("^[lnp]") then
-      if ibuf:match("^l") then gflags["l"] = true end
-      if ibuf:match("^n") then gflags["n"] = true end
-      if ibuf:match("^p") then gflags["p"] = true end
+      local flag = ibuf:sub(1,1)
       ibuf = ibuf:sub(2)
+      gflags[flag] = true
     end
     if not check_current_addr(addr_cnt) then return nil end
     gflagsp,ibuf = get_command_suffix(ibuf, gflagsp)
@@ -440,7 +454,7 @@ do
   end
 
   command.e = function(c, ibuf, isglobal)
-    if c == 'e' and buffer.modified then
+    if c == 'e' and buffer.modified and not scripted then
       error_msg "Buffer is modified"
     end
     if unexpected_address(addr_cnt) or
@@ -603,7 +617,7 @@ do
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    if (buffer.modified and c == 'q') then
+    if (buffer.modified and c == 'q' and not scripted) then
       error_msg "Buffer is modified"
       return nil
     else
@@ -619,10 +633,10 @@ do
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     --UNDO
-    if not def_filename then --or SHELL
+    if not def_filename and not fnp:match("^!") then
       def_filename = fnp
     end
-    addr = inout.read_file(fnp, second_addr)
+    addr = inout.read_file(#fnp > 0 and fnp or def_filename, second_addr)
     if not addr then return nil end
     --if addr > 0 and addr ~= buffer.last_addr then buffer.modified = true end
     if addr > 0 then buffer.modified = true end
@@ -673,7 +687,7 @@ do
     if not addr then return nil end
     if addr == buffer.last_addr then
       buffer.modified = false
-    elseif buffer.modified and n == 'q' then
+    elseif buffer.modified and n == 'q' and not scripted then
       error_msg "Buffer is modified"
       return nil
     end
@@ -770,7 +784,7 @@ do
     end
 
     -- When does this test come into play?
-    if #(table.concat(gflags)) > 0 then
+    if flags_are_set(gflags) then
        inout.display_lines(buffer.current_addr, buffer.current_addr, gflags)
     end
 
@@ -884,7 +898,11 @@ end
 
 local
 function main_loop()
+  if scripted then
+    verbose,prompt_on = nil,nil
+  end
   repeat prompt() until not read_and_run_command()
+  return last_error_msg and 1 or 0
 end
 M.main_loop = main_loop
 

@@ -8,14 +8,16 @@ local buffer = require "buffer"
 local inout = require "inout"		-- only for get_tty_line :-(
 
 
--- Static local data
-local stbuf = nil	-- substitution template buffer
+-- Persistent local data
 local global_pat = nil	-- the last pattern we matched
+local stbuf = nil	-- substitution template buffer
 
 
+-- Is there a pattern stored from a previous search/substitution?
 local function prev_pattern()
   return global_pat and true or false
 end
+M.prev_pattern = prev_pattern
 
 -- Escape special characters in a string that will be used as a Lua
 -- character class. This means an initial ^, a ], a - and % itself.
@@ -107,7 +109,7 @@ M.build_active_list = build_active_list
 local function extract_subst_template(ibuf, isglobal)
   local delimiter = ibuf:sub(1,1)
   ibuf = ibuf:sub(2)
-  if ibuf:sub(1,1) == '%' and ibuf:sub(2,1) == delimiter then
+  if ibuf:sub(1,1) == '%' and ibuf:sub(2,2) == delimiter then
     ibuf = ibuf:sub(2)
     if not stbuf then
       error_msg "No previous substitution"
@@ -163,7 +165,7 @@ function extract_subst_tail(ibuf, isglobal)
 
   if ibuf:match("^g") then
     ibuf = ibuf:sub(2)
-    gflags = {g=true}
+    gflags = { g=true }
   end
 
   return gflags,snum,ibuf
