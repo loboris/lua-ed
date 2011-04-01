@@ -14,3 +14,11 @@ TODO
 - Implement shell escapes/piping (search for '!')
 - Implement undo
 - Implement commands as separate functions
+- Implement "-s" flag ("scripted"):
+  - suppresses printing number of bytes in read_file() and write_file()
+  - 'e' on a modified file acts as 'E'
+  - 'q' always quits, even if buffer is modified
+  - 'wq' also quits if the buffer is modified and you only wrote a part of it
+  - suppresses printing of "!\n" after a ! command's return from the system
+  - checking of buffer being modified is also bypassed when EOF is received
+    as command input

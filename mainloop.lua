@@ -13,7 +13,7 @@ end
 
 -- To be ed-compatible we can set "ed_compatible" to true,
 -- which suppress printing of error messages and prompts.
-local ed_compatible = true
+local ed_compatible = false
 
 -- Usually we always prints a prompt and error messages.
 -- "verbose" and "prompt_on" allow these to be toggled
@@ -31,7 +31,15 @@ local last_error_msg = nil
 
 -- Print an error message
 function error_msg (msg)
-  io.stderr:write((verbose and msg or "?").."\n")
+  if not msg then 	-- DEBUG
+    io.stderr:write("Error message is nil|\n")
+    return
+  end
+  if verbose then
+    io.stderr:write(msg .."\n")
+  else
+    io.stderr:write("?\n")
+  end
   just_printed_error_msg = true
   last_error_msg = msg
 end
@@ -253,8 +261,8 @@ end
 -- get_command_suffix()
 -- verify the command suffix in the command buffer.
 -- gflags is a set: if gflags["l"], then l is set.
--- returns the new valus of gflags and the rest of ibuf on success
--- or nil on failure
+-- returns the new value of gflags and the rest of ibuf on success
+-- or the original value of gflags and nil on failure
 local function get_command_suffix(ibuf,gflags)
   while ibuf:match("^[lnp]") do
     gflags[ibuf:sub(1,1)] = true
@@ -262,7 +270,7 @@ local function get_command_suffix(ibuf,gflags)
   end
   if not ibuf:match("^\n") then
     error_msg "Invalid command suffix"
-    return nil
+    return gflags,nil
   end
   ibuf = ibuf:sub(2) -- eat the newline
   return gflags,ibuf
@@ -322,7 +330,8 @@ do
 	  ibuf = ibuf:sub(2)
 	else
 	  if #(table.concat(sflags)) > 0 then
-	    error_msg "Invalid command suffix 1"
+	    -- Can this ever happen?
+	    error_msg "Invalid command suffix"
 	    return nil
 	  end
 	end
@@ -361,7 +370,7 @@ do
     end
     if not check_current_addr(addr_cnt) then return nil end
     gflagsp,ibuf = get_command_suffix(ibuf, gflagsp)
-    if not gflagsp then return nil end
+    if not ibuf then return nil end
     -- UNDO
     if not regex.search_and_replace(first_addr, second_addr,
 				    gflags, snum, isglobal) then
@@ -395,7 +404,7 @@ do
 
   command.a = function(c, ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     -- UNDO
     ibuf = buffer.append_lines(ibuf, second_addr, isglobal,
 			       inout.get_tty_line)
@@ -408,7 +417,7 @@ do
     if second_addr == 0 then second_addr = 1 end
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     -- UNDO
     buffer.delete_lines(first_addr, second_addr, isglobal)
     ibuf = buffer.append_lines(ibuf, buffer.current_addr, isglobal,
@@ -420,7 +429,7 @@ do
   command.d = function(c, ibuf, isglobal)
     if check_current_addr(addr_cnt) then
       gflags,ibuf = get_command_suffix(ibuf,gflags)
-      if not gflags then return nil end
+      if not ibuf then return nil end
     else
       return nil
     end
@@ -483,7 +492,7 @@ do
     n = (c == 'G') or (c == 'V')
     if n then
       gflags,ibuf = get_command_suffix(ibuf,gflags)
-      if not gflags then return nil end
+      if not ibuf then return nil end
     end
     local status
     status,ibuf = exec_global(ibuf, gflags, n)
@@ -496,12 +505,12 @@ do
 
   -- 'h' 'H'
   command.h = function(c, ibuf, isglobal)
-    -- 'h' should print the error message from the last error
-    -- 'H' should toggle the printing of verbose error messages.
-    -- Here, they both just print a generic help message.
+    -- 'h' prints the error message from the last error that was generated
+    -- 'H' toggles the printing of verbose error messages and, if this leaves
+    --     it on, prints the last error message
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     if c == 'H' then verbose = not verbose end
     print_last_error_msg()
     return "",ibuf
@@ -511,7 +520,7 @@ do
   command.i = function(c, ibuf, isglobal)
     if second_addr == 0 then second_addr = 1 end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     -- UNDO
     ibuf = buffer.append_lines(ibuf, second_addr - 1, isglobal,
 			       inout.get_tty_line)
@@ -523,7 +532,7 @@ do
     if not check_addr_range(buffer.current_addr, buffer.current_addr + 1,
 			       addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     -- UNDO
     if first_addr ~= second_addr then
       buffer.join_lines(first_addr, second_addr, isglobal)
@@ -538,7 +547,7 @@ do
       return invalid_address()
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags or
+    if not ibuf or
        not buffer.mark_line_node(second_addr, n) then
       return nil
     end
@@ -554,7 +563,7 @@ do
       error_msg "Invalid destination"  return nil
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     -- UNDO
     buffer.move_lines(first_addr, second_addr, addr, isglobal)
     return "",ibuf
@@ -564,7 +573,7 @@ do
   command.p = function(c, ibuf, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     gflags[c] = true
     inout.display_lines(first_addr, second_addr, gflags)
     gflags = {}
@@ -593,7 +602,7 @@ do
   command.q = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     if (buffer.modified and c == 'q') then
       error_msg "Buffer is modified"
       return nil
@@ -631,7 +640,7 @@ do
     addr,ibuf = get_third_addr(ibuf)
     if not addr then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     --UNDO
     buffer.copy_lines(first_addr, second_addr, addr)
     return "",ibuf
@@ -640,7 +649,7 @@ do
   command.u = function(c, ibuf, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     error_msg "Undo not implemented"
     return nil
   end
@@ -678,7 +687,7 @@ do
       return invalid_address()
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     --UNDO
     if not buffer.put_lines(second_addr) then return nil end
     return "",ibuf
@@ -687,7 +696,7 @@ do
   command.y = function(c, ibuf, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     buffer.yank_lines(first_addr, second_addr)
     return "",ibuf
   end
@@ -701,7 +710,7 @@ do
       inout.window_lines,ibuf = parse_int(ibuf)
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     inout.display_lines(second_addr,
 			math.min(buffer.last_addr,
 				 second_addr + inout.window_lines),
@@ -712,7 +721,7 @@ do
   
   command['='] = function(c, ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
-    if not gflags then return nil end
+    if not ibuf then return nil end
     print( (addr_cnt > 0) and second_addr or buffer.last_addr )
     return "",ibuf
   end
@@ -848,10 +857,10 @@ local function read_and_run_command()
 
   just_printed_error_msg = false
 
-local die_on_errors = true
+local die_on_errors = false
 
 if die_on_errors then
-  -- used in debugging to get a stack backtrace and die on interrupts
+  -- used in debugging to get a stack backtrace and to die on interrupts
   status,ibuf = exec_command(ibuf, false)
 else
   -- Use pcall in the hope that bugs don't junk the editor session
@@ -865,7 +874,7 @@ end  -- die_on_errors
   -- status=nil means there was some error. Catch bugs where an error code
   -- is returned but we never printed an error message. Should never happen.
   if status == nil and not just_printed_error_msg then
-    error_msg "?"
+    error_msg "???"
   elseif status == "QUIT" then
     return nil
   end
