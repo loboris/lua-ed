@@ -34,7 +34,7 @@ function ed(...)
   end
   local exit_status = mainloop.main_loop()
   -- The os library may not be available (eg in eLua)
-  if os then
+  if os and os.exit then
     os.exit(exit_status)
   else
     return exit_status
