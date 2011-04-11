@@ -385,7 +385,7 @@ do
     if not check_current_addr(addr_cnt) then return nil end
     gflagsp,ibuf = get_command_suffix(ibuf, gflagsp)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     if not regex.search_and_replace(first_addr, second_addr,
 				    gflags, snum, isglobal) then
       return nil
@@ -419,7 +419,7 @@ do
   command.a = function(c, ibuf, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     ibuf = buffer.append_lines(ibuf, second_addr, isglobal,
 			       inout.get_tty_line)
     if not ibuf then return nil end
@@ -432,7 +432,7 @@ do
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     buffer.delete_lines(first_addr, second_addr, isglobal)
     ibuf = buffer.append_lines(ibuf, buffer.current_addr, isglobal,
 			       inout.get_tty_line)
@@ -447,7 +447,7 @@ do
     else
       return nil
     end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     buffer.delete_lines(first_addr, second_addr, isglobal)
     buffer.inc_current_addr()
     return "",ibuf
@@ -464,12 +464,12 @@ do
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
     buffer.delete_lines(1, buffer.last_addr, isglobal)  --TODO clear_buffer()
-    -- UNDO buffer.clear_undo_stack()
+    buffer.clear_undo_stack()	-- save memory
     if #fnp > 0 then def_filename = fnp end	-- SHELL
     if not inout.read_file(#fnp > 0 and fnp or def_filename, 0) then
       return nil
     end
-    --UNDO
+    buffer.reset_undo_state()
     buffer.modified = false
     return "",ibuf
   end
@@ -535,7 +535,7 @@ do
     if second_addr == 0 then second_addr = 1 end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     ibuf = buffer.append_lines(ibuf, second_addr - 1, isglobal,
 			       inout.get_tty_line)
     if not ibuf then return nil end
@@ -547,7 +547,7 @@ do
 			       addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     if first_addr ~= second_addr then
       buffer.join_lines(first_addr, second_addr, isglobal)
     end
@@ -578,7 +578,7 @@ do
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    -- UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     buffer.move_lines(first_addr, second_addr, addr, isglobal)
     return "",ibuf
   end
@@ -632,7 +632,7 @@ do
     if addr_cnt == 0 then second_addr = buffer.last_addr end
     fnp,ibuf = get_filename(ibuf)
     if not fnp then return nil end
-    --UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     if not def_filename and not fnp:match("^!") then
       def_filename = fnp
     end
@@ -655,7 +655,7 @@ do
     if not addr then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    --UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     buffer.copy_lines(first_addr, second_addr, addr)
     return "",ibuf
   end
@@ -664,9 +664,14 @@ do
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    error_msg "Undo not implemented"
-    return nil
+    if c == 'u' then
+      buffer.undo(isglobal)
+    else
+      buffer.print_undo_stack();
+    end
+    return "",ibuf
   end
+  command.U = command.u
 
   -- 'w' 'W'
   command.w = function(c, ibuf, isglobal)
@@ -702,7 +707,7 @@ do
     end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    --UNDO
+    if not isglobal then buffer.clear_undo_stack() end
     if not buffer.put_lines(second_addr) then return nil end
     return "",ibuf
   end
@@ -776,6 +781,11 @@ do
     ibuf = skip_blanks(ibuf)
     c, ibuf = ibuf:match("^(.)(.*)$")
 
+    -- TODO: gflags sometimes gets left as nil from a failure return value.
+    -- We should change everything to return nil ibuf as the first parameter
+    -- instead of nil gflags as the 1st param.
+    if not gflags then gflags = {} end
+
     if command[c] then
       return command[c](c, ibuf, isglobal)
     else
@@ -812,7 +822,7 @@ M.exec_command = exec_command
       cmd = ibuf
     end
   end
-  --UNDO
+  buffer.clear_undo_stack()
   while true do
     local continue = nil	-- Implementing C in Lua, sigh!
     local lp = buffer.next_active_node()
@@ -867,7 +877,8 @@ local function read_and_run_command()
     return true
   end
 
-  if not ibuf then return nil end	-- EOF or error reading input
+  -- EOF or error reading input
+  if not ibuf then return nil end
 
   just_printed_error_msg = false
 

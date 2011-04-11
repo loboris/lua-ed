@@ -125,7 +125,10 @@ local function extract_subst_template(ibuf, isglobal)
       stbuf = stbuf..'\n'
       if not isglobal then
         ibuf = inout.get_tty_line()
-	if not ibuf then return nil end
+	if not ibuf then
+	  errmsg "Unexpected EOF"
+          return nil
+        end
       end
     else
       stbuf = stbuf..ibuf:sub(1,1)
@@ -256,6 +259,7 @@ local
 function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
   local lc
   local match_found = false
+  local up = nil	-- for undo
 
   buffer.current_addr = first_addr - 1
   for lc = 0, second_addr - first_addr do
@@ -267,7 +271,11 @@ function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
       txt = txt .. "\n"  -- put_sbuf_line needs a trailing newline so supply it
       repeat
         txt = buffer.put_sbuf_line(txt, buffer.current_addr)
-	--UNDO
+	if up then
+          up.tail = buffer.search_line_node(buffer.current_addr)
+	else
+	  up = buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
+	end
       until txt == ""
       match_found = true
     end

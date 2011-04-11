@@ -209,6 +209,7 @@ end
 -- a + b	a then b
 
 local unset_active_nodes -- forward declaration of local function
+
 do
   local active_list = {} -- array of node references (may contain nils)
   local active_len = 0	 -- maximum used index in active_list
@@ -268,6 +269,140 @@ do
 
 end
 
+---------- Code to manage "undo" ----------
+
+-- "Undo" keeps a stack of operations that were performed on the buffer.
+-- Each node in the stack (here, an array) has fields:
+   -- type: "UADD", "UDEL", "UMOV"
+   -- head: pointer to the head of the list of lines involved
+   -- tail: pointer to the tail of the list of lines involved
+
+do
+
+  local ustack = {}
+  -- Values to restore when undoing.  If nil, undo is not possible.
+  local u_current_addr = nil
+  local u_last_addr = nil
+  local u_modified = nil
+
+  local function clear_undo_stack()
+    for u_ptr = #ustack, 1, -1 do
+      if ustack[u_ptr].type == "UDEL" then
+        local ep = ustack[u_ptr].tail.forw
+        local bp = ustack[u_ptr].head
+        while bp ~= ep do
+          local lp = bp.forw
+	  unmark_line_node(bp)
+	  bp = lp
+        end
+      end
+    end
+    ustack = {}
+    u_current_addr = M.current_addr
+    u_last_addr = M.last_addr
+    u_modified = M.modified
+  end
+
+  local function reset_undo_state()
+    clear_undo_stack()
+    u_current_addr = nil
+    u_last_addr = nil
+    u_modified = nil
+  end
+
+  -- Put a new change on the undo stack
+  local function push_undo_atom(type, from, to)
+    local new = {
+      type = type,
+      tail = search_line_node(to),
+      head = search_line_node(from)
+    }
+    ustack[#ustack+1] = new
+    return new
+  end
+
+  local function undo(isglobal)
+    if (not u_current_addr) or (not u_last_addr) then
+      error_msg "Nothing to undo"
+      return nil
+    end
+
+    local o_current_addr = M.current_addr
+    local o_last_addr = M.last_addr
+    local o_modified = M.modified
+
+    search_line_node(0)    -- reset cached values
+
+    local skip_next = false	--used to effect "--n" inside the loop
+    for n = #ustack, 1, -1 do
+      if skip_next then
+        skip_next = false
+      else
+	if ustack[n].type == "UADD" then
+	  link_nodes(ustack[n].head.back, ustack[n].tail.forw)
+	  ustack[n].type = "UDEL"
+
+	elseif ustack[n].type == "UDEL" then
+	  link_nodes(ustack[n].head.back, ustack[n].head)
+	  link_nodes(ustack[n].tail, ustack[n].tail.forw)
+	  ustack[n].type = "UADD"
+
+	elseif ustack[n].type == "UMOV" then
+	  link_nodes(ustack[n-1].head, ustack[n].head.forw)
+	  link_nodes(ustack[n].tail.back, ustack[n-1].tail)
+	  link_nodes(ustack[n].head, ustack[n].tail)
+	  skip_next = true	-- has the effect of "n = n - 1"
+
+	else
+	  error("Internal error: Unknown undo node type " ..
+		tostring(ustack[n].type))
+	end
+      end
+    end
+
+    -- Reverse the undo stack order
+    do
+      local new_stack = {}
+      for n = 1, #ustack do
+	new_stack[n] = ustack[#ustack - (n-1)]
+      end
+      ustack, new_stack = new_stack, nil
+    end
+
+    if isglobal then
+      M.clear_active_list();
+    end
+    M.current_addr, u_current_addr = u_current_addr, o_current_addr
+    M.last_addr, u_last_addr       = u_last_addr, o_last_addr
+    M.modified, u_modified         = u_modified, o_modified
+
+    return true  -- Success
+  end
+
+  -- DEBUG function to show the undo stack
+  local function print_undo_stack()
+    print("undo stack has "..#ustack.." items")
+    for n = 1,#ustack do
+      local atom = ustack[n]
+      print(atom.type)
+      lp = atom.head
+      while lp ~= atom.tail do
+	print("  " .. tostring(lp.line))
+        lp = lp.forw
+      end
+      print("  " .. tostring(lp.line))
+    end
+  end
+
+  -- export the functions
+  M.clear_undo_stack = clear_undo_stack
+  M.reset_undo_state = reset_undo_state
+  M.push_undo_atom   = push_undo_atom
+  M.undo             = undo
+  M.print_undo_stack = print_undo_stack
+
+end
+
 ---------- Code to perform editor operations on the line buffer ----------
 
 -- insert text after line n, 
@@ -277,11 +412,13 @@ end
 -- Return the unused part of ibuf on success or nil on failure
 
 local function append_lines(ibuf, addr, isglobal, get_tty_line)
+  local up = nil	-- for undo
   M.current_addr = addr
   while true do
     if not isglobal then
       ibuf = get_tty_line()
-      if not ibuf then break end   -- return nil
+      -- EOF while reading lines terminates the reading, but is not an error
+      if not ibuf then return "" end
     else
       if #ibuf == 0 then break end -- return success
     end
@@ -290,7 +427,11 @@ local function append_lines(ibuf, addr, isglobal, get_tty_line)
       break
     end
     ibuf = put_sbuf_line(ibuf, M.current_addr)
-    -- UNDO
+    if up then
+      up.tail = search_line_node(M.current_addr)
+    else
+      up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+    end
     M.modified = true
   end
   return ibuf
@@ -330,6 +471,7 @@ do
   -- returns true on success, nil on failure
   function put_lines(addr)
     local lp = yank_buffer_head.forw
+    local up = nil	-- for undo
 
     if lp == yank_buffer_head then
       error_msg "Nothing to put"
@@ -340,7 +482,11 @@ do
       local p = dup_line_node(lp)
       add_line_node(p, M.current_addr)
       M.current_addr = M.current_addr + 1
-      -- UNDO
+      if up then
+        up.tail = p
+      else
+        up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+      end
       M.modified = true
       lp = lp.forw
     end
@@ -353,7 +499,7 @@ end
 -- copy a range of lines elsewhere in the buffer
 local function copy_lines(first_addr, second_addr, addr)
   local np = search_line_node(first_addr)
-  -- UNDO
+  local up = nil	-- for undo
   local n = second_addr - first_addr + 1
   local m = 0
 
@@ -368,7 +514,11 @@ local function copy_lines(first_addr, second_addr, addr)
       local lp = dup_line_node(np)
       add_line_node(lp, M.current_addr)
       M.current_addr = M.current_addr + 1
-      -- UNDO
+      if up then
+        up.tail = lp
+      else
+        up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+      end
       M.modified = true
       np = np.forw
     end
@@ -383,7 +533,7 @@ local function delete_lines(from, to, isglobal)
   local n, p
 
   yank_lines(from, to)
-  -- UNDO
+  M.push_undo_atom("UDEL", from, to)
   n = search_line_node(inc_addr(to))
   p = search_line_node(from - 1)
   if isglobal then unset_active_nodes(p.forw, n) end
@@ -408,7 +558,7 @@ local function join_lines(from, to, isglobal)
   delete_lines(from, to, isglobal)
   M.current_addr = from - 1
   put_sbuf_line(table.concat(lines), M.current_addr)
-  -- UNDO
+  M.push_undo_atom("UADD", M.current_addr, M.current_addr)
   M.modified = true
 end
 M.join_lines = join_lines
@@ -424,7 +574,9 @@ local function move_lines(first_addr, second_addr, addr, isglobal)
     b2 = search_line_node(p)
     M.current_addr = second_addr
   else
-    --UNDO
+    M.push_undo_atom("UMOV", p, n)
+    M.push_undo_atom("UMOV", addr, inc_addr(addr))
+
     a1 = search_line_node(n)
     if addr < first_addr then
       b1 = search_line_node(p)
@@ -437,9 +589,9 @@ local function move_lines(first_addr, second_addr, addr, isglobal)
     link_nodes(b2, b1.forw)
     link_nodes(a1.back, a2)
     link_nodes(b1, a1)
-    M.current_addr = addr + (addr < first_addr
-                           and second_addr - first_addr + 1
-			   or 0)
+    M.current_addr = addr + ((addr < first_addr)
+                             and (second_addr - first_addr + 1)
+			     or 0)
   end
   if isglobal then unset_active_nodes(b2.forw, a2) end
   M.modified = true

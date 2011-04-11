@@ -89,9 +89,7 @@ local function get_tty_line()
   -- TODO: io.read() returns the line without its newline character.
   -- TODO: Handle the input char by char, failing if ^C is entered
   local line = io.read()
-  if not line then
-    return nil
-  end
+  if not line then return nil end    -- Handled by callers if an error
   return line .. "\n"
 end
 M.get_tty_line = get_tty_line
@@ -128,7 +126,10 @@ local function get_extended_line(ibuf, strip_escaped_newlines)
   -- checking each *new* line for an escaped newline
   while true do
     local s = get_tty_line()
-    if not s then return nil end
+    if not s then
+      error_msg "Unexpected end-of-file"
+      return nil
+    end
     -- TODO Handle lack of terminating newline
     ibuf = ibuf .. s
     if #ibuf < 2 or not trailing_escape(ibuf) then
@@ -162,7 +163,8 @@ local function read_stream(fp, addr)
 
   local lp = buffer.search_line_node(addr)
   local size = 0
-  --UNDO
+  local up = nil	-- for undo
+  
   buffer.current_addr = addr
   while true do
     local s = read_stream_line(fp)
@@ -172,7 +174,11 @@ local function read_stream(fp, addr)
     size = size + #s
     buffer.put_sbuf_line(s, buffer.current_addr)
     lp = lp.forw
-    -- UNDO
+    if up then
+      up.tail = lp
+    else
+      up = buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
+    end
   end
   return size
 end
