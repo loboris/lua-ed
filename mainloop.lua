@@ -888,7 +888,7 @@ end  -- die_on_errors
   -- status=nil means there was some error. Catch bugs where an error code
   -- is returned but we never printed an error message. Should never happen.
   if status == nil and not just_printed_error_msg then
-    error_msg "???"
+    error_msg "Something went wrong"
   elseif status == "QUIT" then
     return nil
   end

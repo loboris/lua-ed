@@ -24,13 +24,12 @@ M.window_columns = 72
 -- and with decimal digits instead of octal in the \nnn form
 -- "p" does not have a newline at the end of it.
 local function put_tty_line(p, gflags)
-  local escapes = "\a\b\f\n\r\t\v\\'\""
+  local escapes = "\a\b\f\n\r\t\v"
   local esctab = {	-- map escape chars to their representations
     ['\a']='\\a', ['\b']='\\b', ['\f']='\\f', ['\n']='\\n', ['\r']='\\r',
-    ['\t']='\\t', ['\v']='\\v', ['\\']='\\\\', ["'"]="\\'", ['"']='\\"',
+    ['\t']='\\t', ['\v']='\\v',
   }
-  local controls = "([\001-\031\127-\255])"
-  local col = 0		-- How many chars have we output on this line?
+  local col = 0                -- How many chars have we output on this line?
 
   if gflags['n'] then
     io.write(string.format("%d\t", buffer.current_addr))
@@ -48,15 +47,14 @@ local function put_tty_line(p, gflags)
     	       function(c)
     		 return "\\" .. string.format("%03d", string.byte(c))
 	       end)
-      -- Unlike ed, we do not overflow the 72nd column on escaped characters
-      -- also, when numbering lines we indent all continuation lines to match
-      if col + #ch > M.window_columns then
-        io.write("\\\n") col = 0
-	if gflags['n'] then
-	  io.write("\t") col = 8
-	end
+      -- Like ed, we overflow the 72nd column when printing escaped
+      -- characters
+      if col >= M.window_columns then
+        io.write("\\\n")
+	col = 0
       end
-      io.write(ch)       col = col + #ch
+      io.write(ch)
+      col = col + #ch
     end
   end
   if gflags['l'] then
