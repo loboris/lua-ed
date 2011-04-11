@@ -5,6 +5,7 @@
 
 local M = {}		-- the module table
 
+-------------------- Code to handle the buffer of lines --------------------
 
 -- exported variables
 M.current_addr = 0	-- current address in editor buffer
@@ -153,6 +154,50 @@ local function put_sbuf_line(s, addr)
 end
 M.put_sbuf_line = put_sbuf_line
 
+-------------------- Code to handle line marks --------------------
+
+-- Mark and unmark lines.
+-- Note that "mark" is called with a line number, and is called externally
+-- but "unmark" is called with a node address and is only called from this file.
+local mark_line_node
+local unmark_line_node
+local get_marked_line_node
+do
+
+  local mark = {}		-- line markers, indexed by 'a'-'z'
+
+  function mark_line_node(addr, c)
+    if not c:match("^[a-z]$") then
+      error_msg "Invalid mark character"
+      return nil
+    end
+    local lp = search_line_node(addr)
+    mark[c] = lp
+    return true
+  end
+  M.mark_line_node = mark_line_node
+
+  -- Used in undo code
+  function unmark_line_node(lp)
+    for c,node in pairs(mark) do
+      if node == lp then mark[c] = nil end
+    end
+  end
+  M.unmark_line_node = unmark_line_node
+
+  -- return address of a marked line
+  function get_marked_node_addr(c)
+    if not c:match("^[a-z]$") then
+      error_msg "Invalid mark character"
+      return nil
+    end
+    return get_line_node_addr(mark[c])
+  end
+  M.get_marked_node_addr = get_marked_node_addr
+
+end
+
+---------- Code to handle mark/sweep of lines used in g commands ----------
 
 -- List of active nodes used in g/RE/cmd
 -- Call sequence is always:
@@ -223,6 +268,7 @@ do
 
 end
 
+---------- Code to perform editor operations on the line buffer ----------
 
 -- insert text after line n, 
 -- If not isglobal, read lines from stdin and stop when a single period is read.
@@ -400,47 +446,6 @@ local function move_lines(first_addr, second_addr, addr, isglobal)
 end
 M.move_lines = move_lines
 
--- Mark and unmark lines.
--- Note that "mark" is called with a line number, and is called externally
--- but "unmark" is called with a node address and is only called from this file.
-local mark_line_node
-local unmark_line_node
-local get_marked_line_node
-do
-
-  local mark = {}		-- line markers, indexed by 'a'-'z'
-
-  function mark_line_node(addr, c)
-    if not c:match("^[a-z]$") then
-      error_msg "Invalid mark character"
-      return nil
-    end
-    local lp = search_line_node(addr)
-    mark[c] = lp
-    return true
-  end
-  M.mark_line_node = mark_line_node
-
-  -- Used in undo code
-  function unmark_line_node(lp)
-    for c,node in pairs(mark) do
-      if node == lp then mark[c] = nil end
-    end
-  end
-  M.unmark_line_node = unmark_line_node
-
-  -- return address of a marked line
-  function get_marked_node_addr(c)
-    if not c:match("^[a-z]$") then
-      error_msg "Invalid mark character"
-      return nil
-    end
-    return get_line_node_addr(mark[c])
-  end
-  M.get_marked_node_addr = get_marked_node_addr
-
-end
-
 
 local function init()
   clear_buffer()
@@ -448,8 +453,6 @@ local function init()
 end
 M.init = init
 
-
--- UNDO code goes here
-
+---------- All done return the module table ----------
 
 return M
