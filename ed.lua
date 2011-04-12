@@ -32,6 +32,7 @@ function ed(...)
   buffer.init()
   if filename then
     inout.read_file(filename, 0)    -- Error return is ignored also in real ed.
+    if not filename:match("^!") then mainloop.set_def_filename(filename) end
   end
   local exit_status = mainloop.main_loop()
   -- The os library may not be available (eg in eLua)

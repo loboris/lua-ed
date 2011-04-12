@@ -50,12 +50,17 @@ local inout  = require "inout"
 local regex  = require "regex"
 
 
-local M = {}		-- the module table
-
+local M = {}                -- the module table
 
 -- Persistent local variables
-local def_filename = nil		-- default filename
+
+local def_filename = nil    -- default filename. Has to be external bcos
 local first_addr, second_addr = 0, 0	-- addresses preceding a command letter
+
+-- Export a function to set the default filename, since ed.lua needs this
+function M.set_def_filename(filename)
+  def_filename = filename
+end
 
 
 local prompt, set_prompt	--  forward declaration of file-local functions
@@ -913,15 +918,13 @@ do
   end
 end
 
-local
-function main_loop()
+function M.main_loop()
   if scripted then
     verbose,prompt_on = nil,nil
   end
   repeat prompt() until not read_and_run_command()
   return last_error_msg and 1 or 0
 end
-M.main_loop = main_loop
 
 
 return M		-- end of module
