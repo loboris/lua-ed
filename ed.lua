@@ -2,6 +2,7 @@
 
 local mainloop = require "mainloop"
 local buffer = require "buffer"
+local inout = require "inout"
 
 -- Global to suppress printing of byte counts in read and write files.
 scripted = nil
@@ -30,7 +31,7 @@ function ed(...)
 
   buffer.init()
   if filename then
-    mainloop.exec_command("e " .. filename .. "\n", nil)
+    inout.read_file(filename, 0)    -- Error return is ignored also in real ed.
   end
   local exit_status = mainloop.main_loop()
   -- The os library may not be available (eg in eLua)

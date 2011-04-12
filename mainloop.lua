@@ -456,6 +456,7 @@ do
   command.e = function(c, ibuf, isglobal)
     if c == 'e' and buffer.modified and not scripted then
       error_msg "Buffer is modified"
+      return nil
     end
     if unexpected_address(addr_cnt) or
        unexpected_command_suffix(ibuf) then
