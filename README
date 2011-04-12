@@ -1,0 +1,35 @@
+This is a version of the standard Unix editor "ed", implemented in Lua.
+
+It was written by translating the sources of GNU ed 1.5 into Lua, using the
+Lua search-and-replace patterns instead of standard regex.
+
+BUGS
+
+- Shell escapes and piping are not implemented
+- The pattern cannot contain the search pattern delimiter,
+  which should be able to occur inside character ranges "/[/]/
+  or if quoted as "\/".
+- Unbalanced square brackets in patterns are not an error here.
+  (e.g. testsuite s10 succeeds when it should fail)
+- There are some rare cases when an error value (nil) is returned from below
+  without having printed (or set) an error message.
+  In these cases we print "Something went wrong".
+- NUL characters in files are not handled.  They have the effect of truncating
+  the line at that character.  This is due to the Lua 5.1 string library
+  failing to handle NULs (this is fixed in Lua 5.2 but untested here).
+
+CHANGES
+
+- Patterns for search and replace are Lua 5.1 patterns (as used in string.gsub)
+  which has different syntax for matching and replacing, including:
+  - s/foo/bar/3 replaces the first three occurrences of foo instead of the
+    third because that is how the Lua "snum" parameter works.
+  However, the replacement pattern "%" (the same as the previous substitution)
+  is recognized.
+- The contents of the yank buffer remain intact when editing a different file
+  so you can yank lines from one file and put them into another.
+
+It passes the GNU ed 1.5 test suite, modulo scripts that use shell escapes
+and modulo the different regular expression syntax.
+In the copy of "testsuite" here, the regex syntax for runnable tests has been
+modified to use the Lua syntax.

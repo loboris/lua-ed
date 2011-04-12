@@ -1,0 +1,17 @@
+#! /bin/sh
+
+# Wrapper script for "ed" written in Lua to make it run as a Unix command
+
+# Wraps parameters as a list of quoted string for ed().
+# We don't handle Lua-quoting of literal double quotes in arguments yet.
+luaargs=
+for arg
+do
+  if [ -z "$luaargs" ]; then
+    luaargs="\"$arg\""
+  else
+    luaargs="$luaargs,\"$arg\""
+  fi
+done
+
+exec lua -l ed -e "ed($luaargs)"
