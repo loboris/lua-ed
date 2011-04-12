@@ -398,25 +398,28 @@ do
 
 end
 
--- forward declaration of mutually recursive function
+-- forward declaration of mutually recursive functions
+-- sharing persistent private variables
 local exec_global
--- put exec_command() in file-local scope
 local exec_command
 
--- exec_command(ibuf, isglobal)
+-- exec_command(ibuf, prev_status, isglobal)
 -- execute the next command in the command buffer
 -- returns
    -- nil on error
    -- "" and the rest of the command buffer on success,
    -- "QUIT" if we should quit the program due to a q/Q/wq command.
--- Each command's function return the same as exec_command().
+-- We implement each command's code as an function entry in a table
+-- indexed by the command letters, where the function is passed the
+-- command character that invoked it followed by the rest of
+-- exec_command()'s arguments and returns the same values as exec_command().
 do
   local gflags = {}	-- persistent flags
   local addr_cnt	-- How many addresses were supplied?
   local fnp		-- filename temp used by various commands
   local command = {}	-- table mapping command letters to functions
 
-  command.a = function(c, ibuf, isglobal)
+  command.a = function(c, ibuf, _, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
     if not isglobal then buffer.clear_undo_stack() end
@@ -426,7 +429,7 @@ do
     return "",ibuf
   end
 
-  command.c = function(c, ibuf, isglobal)
+  command.c = function(c, ibuf, _, isglobal)
     if first_addr == 0 then first_addr = 1 end
     if second_addr == 0 then second_addr = 1 end
     if not check_current_addr(addr_cnt) then return nil end
@@ -440,7 +443,7 @@ do
     return "",ibuf
   end
 
-  command.d = function(c, ibuf, isglobal)
+  command.d = function(c, ibuf, _, isglobal)
     if check_current_addr(addr_cnt) then
       gflags,ibuf = get_command_suffix(ibuf,gflags)
       if not ibuf then return nil end
@@ -453,10 +456,11 @@ do
     return "",ibuf
   end
 
-  command.e = function(c, ibuf, isglobal)
-    if c == 'e' and buffer.modified and not scripted then
+  command.e = function(c, ibuf, prev_status, isglobal)
+    if c == 'e' and buffer.modified and not scripted and prev_status ~= "EMOD"
+    then
       error_msg "Buffer is modified"
-      return nil
+      return "EMOD"
     end
     if unexpected_address(addr_cnt) or
        unexpected_command_suffix(ibuf) then
@@ -476,7 +480,7 @@ do
   end
   command.E = command.e
 
-  command.f = function(c, ibuf, isglobal)
+  command.f = function(c, ibuf, _, isglobal)
     if unexpected_address(addr_cnt) or
        unexpected_command_suffix(ibuf) then
       return nil
@@ -493,7 +497,7 @@ do
   end
 
   -- 'g' 'v' 'G' 'V'
-  command.g = function(c, ibuf, isglobal)
+  command.g = function(c, ibuf, _, isglobal)
     if isglobal then
       error_msg "Cannot nest global commands"
       return nil
@@ -519,7 +523,7 @@ do
   command.V = command.g
 
   -- 'h' 'H'
-  command.h = function(c, ibuf, isglobal)
+  command.h = function(c, ibuf, _, isglobal)
     -- 'h' prints the error message from the last error that was generated
     -- 'H' toggles the printing of verbose error messages and, if this leaves
     --     it on, prints the last error message
@@ -532,7 +536,7 @@ do
   end
   command.H = command.h
 
-  command.i = function(c, ibuf, isglobal)
+  command.i = function(c, ibuf, _, isglobal)
     if second_addr == 0 then second_addr = 1 end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
@@ -543,7 +547,7 @@ do
     return "",ibuf
   end
 
-  command.j = function(c, ibuf, isglobal)
+  command.j = function(c, ibuf, _, isglobal)
     if not check_addr_range(buffer.current_addr, buffer.current_addr + 1,
 			       addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
@@ -555,7 +559,7 @@ do
     return "",ibuf
   end
 
-  command.k = function(c, ibuf, isglobal)
+  command.k = function(c, ibuf, _, isglobal)
     local n
     n, ibuf = ibuf:match("^(.)(.*)$")
     if second_addr == 0 then
@@ -569,7 +573,7 @@ do
     return "",ibuf
   end
 
-  command.m = function(c, ibuf, isglobal)
+  command.m = function(c, ibuf, _, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     local addr
     addr,ibuf = get_third_addr(ibuf)
@@ -585,7 +589,7 @@ do
   end
 
    -- 'l' 'n' 'p'
-  command.p = function(c, ibuf, isglobal)
+  command.p = function(c, ibuf, _, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
@@ -597,7 +601,7 @@ do
   command.l = command.p
   command.n = command.p
 
-  command.P = function(c, ibuf, isglobal)
+  command.P = function(c, ibuf, _, isglobal)
     -- In GNU ed, P toggles the printing of the prompt.
     -- Here, an optional filename-style argument sets the prompt string
     -- (and turns prompt-printing on)
@@ -614,13 +618,14 @@ do
   end
 
   -- 'q' 'Q'
-  command.q = function(c, ibuf, isglobal)
+  command.q = function(c, ibuf, prev_status, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    if (buffer.modified and c == 'q' and not scripted) then
+    if buffer.modified and not scripted and c == 'q' and prev_status ~= "EMOD"
+    then
       error_msg "Buffer is modified"
-      return nil
+      return "EMOD"
     else
       return "QUIT"
     end
@@ -628,7 +633,7 @@ do
   end
   command.Q = command.q
 
-  command.r = function(c, ibuf, isglobal)
+  command.r = function(c, ibuf, _, isglobal)
     if unexpected_command_suffix(ibuf) then return nil end
     if addr_cnt == 0 then second_addr = buffer.last_addr end
     fnp,ibuf = get_filename(ibuf)
@@ -644,13 +649,13 @@ do
     return "",ibuf
   end
 
-  command.s = function(c, ibuf, isglobal)
+  command.s = function(c, ibuf, _, isglobal)
     gflags,ibuf = command_s(ibuf, gflags, addr_cnt, isglobal)
     if not gflags then return nil end
     return "",ibuf
   end
 
-  command.t = function(c, ibuf, isglobal)
+  command.t = function(c, ibuf, _, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     addr,ibuf = get_third_addr(ibuf)
     if not addr then return nil end
@@ -661,7 +666,7 @@ do
     return "",ibuf
   end
 
-  command.u = function(c, ibuf, isglobal)
+  command.u = function(c, ibuf, _, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
@@ -675,7 +680,7 @@ do
   command.U = command.u
 
   -- 'w' 'W'
-  command.w = function(c, ibuf, isglobal)
+  command.w = function(c, ibuf, prev_status, isglobal)
     local n = ibuf:sub(1,1)
     if n:match("[qQ]") then ibuf = ibuf:sub(2) end
     if unexpected_command_suffix(ibuf) then return nil end
@@ -693,16 +698,17 @@ do
     if not addr then return nil end
     if addr == buffer.last_addr then
       buffer.modified = false
-    elseif buffer.modified and n == 'q' and not scripted then
+    elseif buffer.modified and not scripted and n == 'q'
+           and prev_status ~= "EMOD" then
       error_msg "Buffer is modified"
-      return nil
+      return "EMOD"
     end
     if n:match("[qQ]") then return "QUIT" end
     return "",ibuf
   end
   command.W = command.w
 
-  command.x = function(c, ibuf, isglobal)
+  command.x = function(c, ibuf, _, isglobal)
     if second_addr < 0 or buffer.last_addr < second_addr then
       return invalid_address()
     end
@@ -713,7 +719,7 @@ do
     return "",ibuf
   end
 
-  command.y = function(c, ibuf, isglobal)
+  command.y = function(c, ibuf, _, isglobal)
     if not check_current_addr(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
@@ -721,7 +727,7 @@ do
     return "",ibuf
   end
 
-  command.z = function(c, ibuf, isglobal)
+  command.z = function(c, ibuf, _, isglobal)
     first_addr = 1
     if not check_addr_range(first_addr,
 			    buffer.current_addr + (isglobal and 0 or 1),
@@ -739,21 +745,21 @@ do
     return "",ibuf
   end
   
-  command['='] = function(c, ibuf, isglobal)
+  command['='] = function(c, ibuf, _, isglobal)
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
     print( (addr_cnt > 0) and second_addr or buffer.last_addr )
     return "",ibuf
   end
 
-  command['!'] = function(c, ibuf, isglobal)
+  command['!'] = function(c, ibuf, _, isglobal)
     if unexpected_address(addr_cnt) then return nil end
     -- TODO
     error_msg "Shell commands are not implemented"
     return nil
   end
 
-  command['\n'] = function(c, ibuf, isglobal)
+  command['\n'] = function(c, ibuf, _, isglobal)
     first_addr = 1
     if not check_addr_range(first_addr,
 			    buffer.current_addr + (isglobal and 0 or 1),
@@ -762,7 +768,7 @@ do
     return "",ibuf
   end
 
-  command['#'] = function(c, ibuf, isglobal)
+  command['#'] = function(c, ibuf, _, isglobal)
     -- Discard up to first newline.
     -- If there is no newline, match returns nil (discarding the whole line)
     ibuf = ibuf:match("^[^\n]*\n(.*)$")
@@ -773,7 +779,7 @@ do
     return "",ibuf
   end
 
-  function exec_command(ibuf, isglobal)
+  function exec_command(ibuf, prev_status, isglobal)
     local c		-- command character
 
     addr_cnt,ibuf = extract_addr_range(ibuf)
@@ -788,7 +794,7 @@ do
     if not gflags then gflags = {} end
 
     if command[c] then
-      return command[c](c, ibuf, isglobal)
+      return command[c](c, ibuf, prev_status, isglobal)
     else
       error_msg "Unknown command"
       return nil
@@ -856,7 +862,7 @@ M.exec_command = exec_command
       ibuf = cmd
       while #ibuf > 0 do
 	local status
-	status,ibuf = exec_command(ibuf, true)
+	status,ibuf = exec_command(ibuf, "", true)
 	if not (status == "") then return nil end
       end
     end
@@ -867,45 +873,57 @@ M.exec_global = exec_global
 
 -- Read an ed command from the input and execute it.
 -- Returns true unless the editor should quit.
-local function read_and_run_command()
-  local ibuf = nil		-- the command line string
+local read_and_run_command    -- forward declaration
+do
+  -- persistent local variable, since exec_command() needs to know the status
+  -- of the previous command so that "q;q" or e;e" ignore the previous
+  -- "Buffer modified" (status == "EMOD") warning.
   local status = ""
-  local ok
 
-  ok,ibuf = pcall(inout.get_tty_line)
-  if not ok then
-    error_msg(ibuf)
+  function read_and_run_command()
+    local ibuf = nil          -- the command line string
+    local ok
+
+    ok,ibuf = pcall(inout.get_tty_line)
+    if not ok then
+      error_msg(ibuf)
+      return true
+    end
+
+    -- EOF or error reading input
+    if not ibuf then
+      if not buffer.modified or scripted then return nil end
+      error_msg("Warning: buffer modified")
+      buffer.modified = false	-- So that we exit if they ^D again
+      status = "EMOD"
+      return true	-- continue
+    end
+
+    just_printed_error_msg = false
+
+    -- used for debug to get a stack backtrace on runtime errors or interrupts
+    local die_on_errors = false
+
+    if die_on_errors then
+      status,ibuf = exec_command(ibuf, status, false)
+    else
+      -- Use pcall in the hope that bugs don't junk the editor session
+      ok,status,ibuf = pcall(exec_command, ibuf, status, false)
+      if not ok then
+	error_msg(status)
+      end
+    end
+
+    -- status=nil means there was some error. Catch bugs where an error code
+    -- is returned but we never printed an error message. Should never happen.
+    if status == nil and not just_printed_error_msg then
+      error_msg "Something went wrong"
+    elseif status == "QUIT" then
+      return nil
+    end
+
     return true
   end
-
-  -- EOF or error reading input
-  if not ibuf then return nil end
-
-  just_printed_error_msg = false
-
-local die_on_errors = false
-
-if die_on_errors then
-  -- used in debugging to get a stack backtrace and to die on interrupts
-  status,ibuf = exec_command(ibuf, false)
-else
-  -- Use pcall in the hope that bugs don't junk the editor session
-  ok,status,ibuf = pcall(exec_command, ibuf, false)
-  if not ok then
-    error_msg(status)
-    -- print("Returning to ed command prompt... this may or may not work...")
-  end
-end  -- die_on_errors
-
-  -- status=nil means there was some error. Catch bugs where an error code
-  -- is returned but we never printed an error message. Should never happen.
-  if status == nil and not just_printed_error_msg then
-    error_msg "Something went wrong"
-  elseif status == "QUIT" then
-    return nil
-  end
-
-  return true
 end
 
 local
