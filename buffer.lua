@@ -278,9 +278,9 @@ end
    -- tail: pointer to the tail of the list of lines involved
 
 do
-
+  -- Local persistent variables
   local ustack = {}
-  -- Values to restore when undoing.  If nil, undo is not possible.
+  -- Values to restore when undoing.  If *_addr is nil, undo is not possible.
   local u_current_addr = nil
   local u_last_addr = nil
   local u_modified = nil
@@ -379,28 +379,11 @@ do
     return true  -- Success
   end
 
-  -- DEBUG function to show the undo stack
-  local function print_undo_stack()
-    print("undo stack has "..#ustack.." items")
-    for n = 1,#ustack do
-      local atom = ustack[n]
-      print(atom.type)
-      lp = atom.head
-      while lp ~= atom.tail do
-	print("  " .. tostring(lp.line))
-        lp = lp.forw
-      end
-      print("  " .. tostring(lp.line))
-    end
-  end
-
-  -- export the functions
+  -- export the module functions
   M.clear_undo_stack = clear_undo_stack
   M.reset_undo_state = reset_undo_state
   M.push_undo_atom   = push_undo_atom
   M.undo             = undo
-  M.print_undo_stack = print_undo_stack
-
 end
 
 ---------- Code to perform editor operations on the line buffer ----------

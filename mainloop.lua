@@ -11,16 +11,12 @@ function parse_int(ibuf)
   return tonumber(n), ibuf
 end
 
--- To be ed-compatible we can set "ed_compatible" to true,
--- which suppress printing of error messages and prompts.
-local ed_compatible = false
-
 -- Usually we always prints a prompt and error messages.
 -- "verbose" and "prompt_on" allow these to be toggled
 -- with the H and P commands
--- and to disable them by default when running scripted
-local verbose = not ed_compatible
-local prompt_on = not ed_compatible
+-- and to disable them by default when running scripted (ed -s or ed -)
+local verbose = true
+local prompt_on = true
 
 -- To catch the case of things returning nil with a missing error message
 -- we remember whether we just printed an error or not.
@@ -32,10 +28,6 @@ local last_error_msg = nil
 
 -- Print an error message
 function error_msg (msg)
-  if not msg then 	-- Should never happen
-    io.stderr:write("Empty error message!\n")
-    return
-  end
   if verbose then
     io.stderr:write(msg .."\n")
   else
@@ -670,14 +662,9 @@ do
     if unexpected_address(addr_cnt) then return nil end
     gflags,ibuf = get_command_suffix(ibuf,gflags)
     if not ibuf then return nil end
-    if c == 'u' then
-      buffer.undo(isglobal)
-    else
-      buffer.print_undo_stack();
-    end
+    buffer.undo(isglobal)
     return "",ibuf
   end
-  command.U = command.u
 
   -- 'w' 'W'
   command.w = function(c, ibuf, prev_status, isglobal)
