@@ -215,9 +215,7 @@ local function write_stream(fp, from, to)
   local size = 0
 
   while from ~= 0 and from <= to do
-    local p = lp.line
-    if not p then return nil end
-    p = p .. "\n"
+    local p = lp.line .. "\n"
     size = size + #p
     if not fp:write(p) then
       error_msg "Cannot write file"
