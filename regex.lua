@@ -94,6 +94,7 @@ local function build_active_list(ibuf, first_addr, second_addr, match)
   lp = buffer.search_line_node(first_addr)
   for addr = first_addr,second_addr do
     local s = lp.line
+    if not s then return nil end
     if (match and s:find(pat)) or (not match and not s:find(pat)) then
       buffer.set_active_node(lp)
     end
