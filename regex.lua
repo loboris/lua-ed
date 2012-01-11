@@ -194,6 +194,7 @@ function next_matching_node_addr(ibuf, forward)
       local s = lp.line
       local ok
 
+      if not s then return nil end
       -- Since the user supplies the pattern we must match,
       -- we catch syntax errors in the pattern and report the error message.
       ok,s = pcall(s.match, s, pat)
