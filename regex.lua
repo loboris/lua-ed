@@ -1,7 +1,7 @@
 -- ed.regex.lua - the pattern-matching and substituting part of
 -- a version of "ed" in Lua.  Uses Lua patterns and substitutions, not regex.
 
-local M = {}		-- the module table
+local regex = {}		-- the module table
 
 
 local buffer = require "buffer"
@@ -17,7 +17,7 @@ local stbuf = nil	-- substitution template buffer
 local function prev_pattern()
   return global_pat and true or false
 end
-M.prev_pattern = prev_pattern
+regex.prev_pattern = prev_pattern
 
 -- Escape special characters in a string that will be used as a Lua
 -- character class. This means an initial ^, a ], a - and % itself.
@@ -102,7 +102,7 @@ local function build_active_list(ibuf, first_addr, second_addr, match)
   end
   return ibuf
 end
-M.build_active_list = build_active_list
+regex.build_active_list = build_active_list
 
 -- return a copy of the substitution template in the command buffer
 -- Dumps the substitution template in stbuf and returns the remainder of the
@@ -174,7 +174,7 @@ function extract_subst_tail(ibuf, isglobal)
 
   return gflags,snum,ibuf
 end
-M.extract_subst_tail = extract_subst_tail
+regex.extract_subst_tail = extract_subst_tail
 
 -- return the address of the next line matching a pattern in a given
 -- direction. wrap around begin/end of editor buffer if necessary.
@@ -207,7 +207,7 @@ function next_matching_node_addr(ibuf, forward)
   error_msg "No match"
   return nil
 end
-M.next_matching_node_addr = next_matching_node_addr
+regex.next_matching_node_addr = next_matching_node_addr
 
 -- Parse a pattern from ibuf and store it in global_pat.
 -- Returns the rest of ibuf, or nil on failure.
@@ -223,7 +223,7 @@ function new_compiled_pattern(ibuf)
   end
   return nil
 end
-M.new_compiled_pattern = new_compiled_pattern
+regex.new_compiled_pattern = new_compiled_pattern
 
 -- replace text matches by the pattern in global_pat according to the
 -- substitution template in stbuf.
@@ -287,6 +287,6 @@ function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
   end
   return true
 end
-M.search_and_replace = search_and_replace
+regex.search_and_replace = search_and_replace
 
-return M
+return regex

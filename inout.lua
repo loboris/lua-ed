@@ -9,12 +9,12 @@
 local buffer = require "buffer" 
 
 
-local M = {}		-- the module table
+local inout = {}		-- the module table
 
 
 -- Screen width/height, also set/used by main_loop.lua
-M.window_lines = 24
-M.window_columns = 72
+inout.window_lines = 24
+inout.window_columns = 72
 
 
 -- print text to stdout, applying the conversion flags set in "gflags".
@@ -49,7 +49,7 @@ local function put_tty_line(p, gflags)
 	       end)
       -- Like ed, we overflow the 72nd column when printing escaped
       -- characters
-      if col >= M.window_columns then
+      if col >= inout.window_columns then
         io.write("\\\n")
 	col = 0
       end
@@ -82,7 +82,7 @@ local function display_lines(from, to, gflags)
     bp = bp.forw
   end
 end
-M.display_lines = display_lines
+inout.display_lines = display_lines
 
 -- read a line of text from stdin and return it or nil on error/EOF
 local function get_tty_line()
@@ -92,7 +92,7 @@ local function get_tty_line()
   if not line then return nil end    -- Handled by callers if an error
   return line .. "\n"
 end
-M.get_tty_line = get_tty_line
+inout.get_tty_line = get_tty_line
 
 -- get_extended_line()
 -- If *ibufpp contains an escaped newline, get an extended line (one
@@ -143,7 +143,7 @@ local function get_extended_line(ibuf, strip_escaped_newlines)
   end
   return ibuf
 end
-M.get_extended_line = get_extended_line
+inout.get_extended_line = get_extended_line
 
 -- read a stream into the editor buffer after line "addr";
 -- return the number of characters read.
@@ -205,7 +205,7 @@ local function read_file(filename, addr)
   if not scripted then io.write(string.format("%d\n", size)) end
   return buffer.current_addr - addr
 end
-M.read_file = read_file
+inout.read_file = read_file
 
 -- write a range of lines to a stream
 -- Return number of byte written or nil on error
@@ -251,6 +251,6 @@ local function write_file(filename, mode, from, to)
   if not scripted then io.write(string.format("%d\n", size)) end
   return (from ~= 0 and from <= to) and (to - from + 1) or 0
 end
-M.write_file = write_file
+inout.write_file = write_file
 
-return M
+return inout

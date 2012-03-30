@@ -50,7 +50,7 @@ local inout  = require "inout"
 local regex  = require "regex"
 
 
-local M = {}                -- the module table
+local mainloop = {}                -- the module table
 
 -- Persistent local variables
 
@@ -58,7 +58,7 @@ local def_filename = nil    -- default filename. Has to be external bcos
 local first_addr, second_addr = 0, 0	-- addresses preceding a command letter
 
 -- Export a function to set the default filename, since ed.lua needs this
-function M.set_def_filename(filename)
+function mainloop.set_def_filename(filename)
   def_filename = filename
 end
 
@@ -219,7 +219,7 @@ do
     end
     return addr_cnt,ibuf   -- zero or more addresses extracted
   end
-  M.extract_addr_range = extract_addr_range
+  mainloop.extract_addr_range = extract_addr_range
 
 end
 
@@ -801,7 +801,7 @@ do
   end
 
 end
-M.exec_command = exec_command
+mainloop.exec_command = exec_command
 
 -- apply command list in the command buffer to active lines in a range.
 -- Return nil on errors, true otherwise, plus the remainder of ibuf on success
@@ -861,7 +861,7 @@ M.exec_command = exec_command
   end
   return true, ibuf
 end
-M.exec_global = exec_global
+mainloop.exec_global = exec_global
 
 -- Read an ed command from the input and execute it.
 -- Returns true unless the editor should quit.
@@ -918,7 +918,7 @@ do
   end
 end
 
-function M.main_loop()
+function mainloop.main_loop()
   if scripted then
     verbose,prompt_on = nil,nil
   end
@@ -927,4 +927,4 @@ function M.main_loop()
 end
 
 
-return M		-- end of module
+return mainloop		-- end of module
