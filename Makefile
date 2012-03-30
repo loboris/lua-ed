@@ -23,4 +23,6 @@ LUAFILES=buffer.lua inout.lua regex.lua mainloop.lua ed.lua
 
 e.lua: $(LUAFILES)
 	# Drop the "return foo" from the end of the module files
-	sed '/^return/d; /require "/d' $(LUAFILES) > e.lua
+	{ echo 'local scripted'; \
+	  sed '/^return/d; /require "/d' $(LUAFILES); \
+	} > e.lua
