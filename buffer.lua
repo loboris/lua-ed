@@ -3,42 +3,42 @@
 -- This module owns the line buffer and the yank buffer
 
 
-local M = {}		-- the module table
+local buffer = {}		-- the module table
 
 -------------------- Code to handle the buffer of lines --------------------
 
 -- exported variables
-M.current_addr = 0	-- current address in editor buffer
-M.last_addr = 0		-- last address in editor buffer
-M.modified = false	-- if set, buffer is different from the file
+buffer.current_addr = 0	-- current address in editor buffer
+buffer.last_addr = 0		-- last address in editor buffer
+buffer.modified = false	-- if set, buffer is different from the file
 
 -- private variables
 local buffer_head = {}		-- editor buffer (doubly linked list of lines)
 
 
 local function inc_current_addr()
-  M.current_addr = M.current_addr + 1
-  if M.current_addr > M.last_addr then
-    M.current_addr = M.last_addr
+  buffer.current_addr = buffer.current_addr + 1
+  if buffer.current_addr > buffer.last_addr then
+    buffer.current_addr = buffer.last_addr
   end
-  return M.current_addr
+  return buffer.current_addr
 end
-M.inc_current_addr = inc_current_addr
+buffer.inc_current_addr = inc_current_addr
 
 local function inc_addr(addr)
-  return addr < M.last_addr and addr + 1 or 0
+  return addr < buffer.last_addr and addr + 1 or 0
 end
-M.inc_addr = inc_addr
+buffer.inc_addr = inc_addr
 
 local function dec_addr(addr)
-  return addr > 0 and addr - 1 or M.last_addr
+  return addr > 0 and addr - 1 or buffer.last_addr
 end
-M.dec_addr = dec_addr
+buffer.dec_addr = dec_addr
 
 local function link_nodes(prev, next)
   prev.forw = next; next.back = prev
 end
-M.link_nodes = link_nodes
+buffer.link_nodes = link_nodes
 
 
 local function clear_buffer()
@@ -62,12 +62,12 @@ do
     local lp,oa = o_lp,o_addr
 
     if oa < addr then
-      if oa + M.last_addr >= 2 * addr then
+      if oa + buffer.last_addr >= 2 * addr then
 	while oa < addr do
 	  oa = oa + 1; lp = lp.forw
 	end
       else
-	lp, oa = buffer_head.back, M.last_addr
+	lp, oa = buffer_head.back, buffer.last_addr
 	while oa > addr do
 	  oa = oa - 1
 	  lp = lp.back
@@ -89,7 +89,7 @@ do
     return lp;
   end
 end
-M.search_line_node = search_line_node
+buffer.search_line_node = search_line_node
 
 -- return line number of a node
 -- or nil if the node does not exist
@@ -109,7 +109,7 @@ local function get_line_node_addr(lp)
   end
   return addr
 end
-M.get_line_node_addr = get_line_node_addr
+buffer.get_line_node_addr = get_line_node_addr
 
 -- insert line node into circular queue after previous
 local function insert_node(lp, prev)
@@ -122,7 +122,7 @@ end
 local function add_line_node(lp, addr)
   p = search_line_node(addr)
   insert_node(lp, p)
-  M.last_addr = M.last_addr + 1
+  buffer.last_addr = buffer.last_addr + 1
 end
 -- not exported
 
@@ -149,10 +149,10 @@ end
 local function put_sbuf_line(s, addr)
   local l,rest = s:match("^([^\n]*)\n(.*)$")
   add_line_node({line=l}, addr)
-  M.current_addr = M.current_addr + 1
+  buffer.current_addr = buffer.current_addr + 1
   return rest
 end
-M.put_sbuf_line = put_sbuf_line
+buffer.put_sbuf_line = put_sbuf_line
 
 -------------------- Code to handle line marks --------------------
 
@@ -175,7 +175,7 @@ do
     mark[c] = lp
     return true
   end
-  M.mark_line_node = mark_line_node
+  buffer.mark_line_node = mark_line_node
 
   -- Used in undo code
   function unmark_line_node(lp)
@@ -183,7 +183,7 @@ do
       if node == lp then mark[c] = nil end
     end
   end
-  M.unmark_line_node = unmark_line_node
+  buffer.unmark_line_node = unmark_line_node
 
   -- return address of a marked line
   function get_marked_node_addr(c)
@@ -193,7 +193,7 @@ do
     end
     return get_line_node_addr(mark[c])
   end
-  M.get_marked_node_addr = get_marked_node_addr
+  buffer.get_marked_node_addr = get_marked_node_addr
 
 end
 
@@ -219,7 +219,7 @@ do
   local function clear_active_list()
     active_list, active_len, active_ptr = {}, 0, 1
   end
-  M.clear_active_list = clear_active_list
+  buffer.clear_active_list = clear_active_list
 
   -- return the next global-active line node
   local function next_active_node()
@@ -235,14 +235,14 @@ do
       return nil
     end
   end
-  M.next_active_node = next_active_node
+  buffer.next_active_node = next_active_node
 
   -- add a line node to the global-active list
   local function set_active_node(lp)
     active_len = active_len + 1
     active_list[active_len] = lp
   end
-  M.set_active_node = set_active_node
+  buffer.set_active_node = set_active_node
 
   -- remove a range of lines from the global-active list,
   -- including bp but not including ep
@@ -298,9 +298,9 @@ do
       end
     end
     ustack = {}
-    u_current_addr = M.current_addr
-    u_last_addr = M.last_addr
-    u_modified = M.modified
+    u_current_addr = buffer.current_addr
+    u_last_addr = buffer.last_addr
+    u_modified = buffer.modified
   end
 
   local function reset_undo_state()
@@ -327,9 +327,9 @@ do
       return nil
     end
 
-    local o_current_addr = M.current_addr
-    local o_last_addr = M.last_addr
-    local o_modified = M.modified
+    local o_current_addr = buffer.current_addr
+    local o_last_addr = buffer.last_addr
+    local o_modified = buffer.modified
 
     search_line_node(0)    -- reset cached values
 
@@ -370,20 +370,20 @@ do
     end
 
     if isglobal then
-      M.clear_active_list();
+      buffer.clear_active_list();
     end
-    M.current_addr, u_current_addr = u_current_addr, o_current_addr
-    M.last_addr, u_last_addr       = u_last_addr, o_last_addr
-    M.modified, u_modified         = u_modified, o_modified
+    buffer.current_addr, u_current_addr = u_current_addr, o_current_addr
+    buffer.last_addr, u_last_addr       = u_last_addr, o_last_addr
+    buffer.modified, u_modified         = u_modified, o_modified
 
     return true  -- Success
   end
 
   -- export the module functions
-  M.clear_undo_stack = clear_undo_stack
-  M.reset_undo_state = reset_undo_state
-  M.push_undo_atom   = push_undo_atom
-  M.undo             = undo
+  buffer.clear_undo_stack = clear_undo_stack
+  buffer.reset_undo_state = reset_undo_state
+  buffer.push_undo_atom   = push_undo_atom
+  buffer.undo             = undo
 end
 
 ---------- Code to perform editor operations on the line buffer ----------
@@ -396,7 +396,7 @@ end
 
 local function append_lines(ibuf, addr, isglobal, get_tty_line)
   local up = nil	-- for undo
-  M.current_addr = addr
+  buffer.current_addr = addr
   while true do
     if not isglobal then
       ibuf = get_tty_line()
@@ -409,17 +409,17 @@ local function append_lines(ibuf, addr, isglobal, get_tty_line)
       ibuf = ibuf:sub(3)
       break
     end
-    ibuf = put_sbuf_line(ibuf, M.current_addr)
+    ibuf = put_sbuf_line(ibuf, buffer.current_addr)
     if up then
-      up.tail = search_line_node(M.current_addr)
+      up.tail = search_line_node(buffer.current_addr)
     else
-      up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+      up = buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
     end
-    M.modified = true
+    buffer.modified = true
   end
   return ibuf
 end
-M.append_lines = append_lines
+buffer.append_lines = append_lines
 
 
 -- Yank/put buffer and its functions
@@ -448,7 +448,7 @@ do
       bp = bp.forw; lp = p
     end
   end
-  M.yank_lines = yank_lines
+  buffer.yank_lines = yank_lines
 
   -- append lines from the yank buffer
   -- returns true on success, nil on failure
@@ -460,22 +460,22 @@ do
       error_msg "Nothing to put"
       return nil
     end
-    M.current_addr = addr
+    buffer.current_addr = addr
     while lp ~= yank_buffer_head do
       local p = dup_line_node(lp)
-      add_line_node(p, M.current_addr)
-      M.current_addr = M.current_addr + 1
+      add_line_node(p, buffer.current_addr)
+      buffer.current_addr = buffer.current_addr + 1
       if up then
         up.tail = p
       else
-        up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+        up = buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
       end
-      M.modified = true
+      buffer.modified = true
       lp = lp.forw
     end
     return true
   end
-  M.put_lines = put_lines
+  buffer.put_lines = put_lines
 
 end
 
@@ -486,7 +486,7 @@ local function copy_lines(first_addr, second_addr, addr)
   local n = second_addr - first_addr + 1
   local m = 0
 
-  M.current_addr = addr
+  buffer.current_addr = addr
   if addr >= first_addr and addr < second_addr then
     n = addr - first_addr + 1
     m = second_addr - addr
@@ -495,37 +495,37 @@ local function copy_lines(first_addr, second_addr, addr)
     while n > 0 do
       n = n - 1
       local lp = dup_line_node(np)
-      add_line_node(lp, M.current_addr)
-      M.current_addr = M.current_addr + 1
+      add_line_node(lp, buffer.current_addr)
+      buffer.current_addr = buffer.current_addr + 1
       if up then
         up.tail = lp
       else
-        up = M.push_undo_atom("UADD", M.current_addr, M.current_addr)
+        up = buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
       end
-      M.modified = true
+      buffer.modified = true
       np = np.forw
     end
     n = n - 1
-    n,m,np = m,0,search_line_node(M.current_addr + 1)
+    n,m,np = m,0,search_line_node(buffer.current_addr + 1)
   end
 end
-M.copy_lines = copy_lines
+buffer.copy_lines = copy_lines
 
 -- delete a range of lines
 local function delete_lines(from, to, isglobal)
   local n, p
 
   yank_lines(from, to)
-  M.push_undo_atom("UDEL", from, to)
+  buffer.push_undo_atom("UDEL", from, to)
   n = search_line_node(inc_addr(to))
   p = search_line_node(from - 1)
   if isglobal then unset_active_nodes(p.forw, n) end
   link_nodes(p, n)
-  M.last_addr = M.last_addr - (to - from + 1)
-  M.current_addr = from - 1
-  M.modified = true
+  buffer.last_addr = buffer.last_addr - (to - from + 1)
+  buffer.current_addr = from - 1
+  buffer.modified = true
 end
-M.delete_lines = delete_lines
+buffer.delete_lines = delete_lines
 
 -- replace a range of lines with the joined text of those lines
 local function join_lines(from, to, isglobal)
@@ -539,12 +539,12 @@ local function join_lines(from, to, isglobal)
   end
   lines[#lines + 1] = "\n"
   delete_lines(from, to, isglobal)
-  M.current_addr = from - 1
-  put_sbuf_line(table.concat(lines), M.current_addr)
-  M.push_undo_atom("UADD", M.current_addr, M.current_addr)
-  M.modified = true
+  buffer.current_addr = from - 1
+  put_sbuf_line(table.concat(lines), buffer.current_addr)
+  buffer.push_undo_atom("UADD", buffer.current_addr, buffer.current_addr)
+  buffer.modified = true
 end
-M.join_lines = join_lines
+buffer.join_lines = join_lines
 
 -- move a range of lines
 local function move_lines(first_addr, second_addr, addr, isglobal)
@@ -555,10 +555,10 @@ local function move_lines(first_addr, second_addr, addr, isglobal)
   if addr == first_addr - 1 or addr == second_addr then
     a2 = search_line_node(n)
     b2 = search_line_node(p)
-    M.current_addr = second_addr
+    buffer.current_addr = second_addr
   else
-    M.push_undo_atom("UMOV", p, n)
-    M.push_undo_atom("UMOV", addr, inc_addr(addr))
+    buffer.push_undo_atom("UMOV", p, n)
+    buffer.push_undo_atom("UMOV", addr, inc_addr(addr))
 
     a1 = search_line_node(n)
     if addr < first_addr then
@@ -572,26 +572,26 @@ local function move_lines(first_addr, second_addr, addr, isglobal)
     link_nodes(b2, b1.forw)
     link_nodes(a1.back, a2)
     link_nodes(b1, a1)
-    M.current_addr = addr + ((addr < first_addr)
+    buffer.current_addr = addr + ((addr < first_addr)
                              and (second_addr - first_addr + 1)
 			     or 0)
   end
   if isglobal then unset_active_nodes(b2.forw, a2) end
-  M.modified = true
+  buffer.modified = true
 end
-M.move_lines = move_lines
+buffer.move_lines = move_lines
 
 
 local function init()
-  M.current_addr = 0	-- current address in editor buffer
-  M.last_addr = 0		-- last address in editor buffer
-  M.modified = false	-- if set, buffer is different from the file
+  buffer.current_addr = 0	-- current address in editor buffer
+  buffer.last_addr = 0		-- last address in editor buffer
+  buffer.modified = false	-- if set, buffer is different from the file
   clear_buffer()
   search_line_node(0)  -- clear line-searching cache
   clear_yank_buffer()
 end
-M.init = init
+buffer.init = init
 
 ---------- All done return the module table ----------
 
-return M
+return buffer
