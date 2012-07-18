@@ -46,7 +46,7 @@ local function clear_buffer()
 end
 
 
--- search_line_nodes():
+-- search_line_node(N):
 -- return the node for the Nth line in the editor buffer
 -- Speed is had by remembering the last node and line number and starting
 -- from there.  This means that calls the add/delete lines must be careful
@@ -583,7 +583,11 @@ M.move_lines = move_lines
 
 
 local function init()
+  M.current_addr = 0	-- current address in editor buffer
+  M.last_addr = 0		-- last address in editor buffer
+  M.modified = false	-- if set, buffer is different from the file
   clear_buffer()
+  search_line_node(0)  -- clear line-searching cache
   clear_yank_buffer()
 end
 M.init = init

@@ -63,18 +63,14 @@ function M.set_def_filename(filename)
 end
 
 
-local prompt, set_prompt	--  forward declaration of file-local functions
-do 
-  local prompt_str = "*"	-- command-line prompt (and its default)
+local prompt_str = "*"		-- command-line prompt (and its default)
 
-  function prompt()
-    if prompt_on then io.stderr:write(prompt_str) end
-  end
+local function prompt()
+  if prompt_on then io.stderr:write(prompt_str) end
+end
 
-  function set_prompt(str)
-    prompt_str = str
-  end
-
+local function set_prompt(str)
+  prompt_str = str
 end
 
 
@@ -123,9 +119,9 @@ local function invalid_address()
   return nil
 end
 
--- Variable used by extract_addr_range and set by next_addr
 local extract_addr_range	-- forward declaration
 do
+  -- Variable used by extract_addr_range and set by next_addr
   local addr_cnt
 
 -- return 
@@ -301,13 +297,21 @@ local function flags_are_set(flags)
 end
 
 local command_s		-- put command_s in file-local scope
+local init_command_s	-- initialize our static data
 do
   -- static data for 's' command
-  local gflags = {}		-- Persistent flags for substitution commands
+  local gflags		-- Persistent flags for substitution commands
 	-- 'b'	 Substitution is global (part of a g/RE/s... command
 	-- [pnl] line-printing flags: print, numerate, list
 	-- 'g'	 The trailing 'g' flag to substitute all occurrences in a line
-  local snum = 0		-- which occurrence to substitute (s2/a/b)
+  local snum		-- which occurrence to substitute (s2/a/b)
+
+  -- Initliase the static variables, called at program startup,
+  -- otherwise the values would persist from one invocation of ed() to the next
+  function init_command_s()
+    gflags = {}
+    snum = 0
+  end
 
   -- execute substitution command
   -- returning the new value of gflagsp and the rest of ibuf on success
@@ -865,57 +869,55 @@ M.exec_global = exec_global
 
 -- Read an ed command from the input and execute it.
 -- Returns true unless the editor should quit.
-local read_and_run_command    -- forward declaration
-do
-  -- persistent local variable, since exec_command() needs to know the status
-  -- of the previous command so that "q;q" or e;e" ignore the previous
-  -- "Buffer modified" (status == "EMOD") warning.
-  local status = ""
 
-  function read_and_run_command()
-    local ibuf = nil          -- the command line string
-    local ok
+-- Persistent local variable, since exec_command() needs to know the status
+-- of the previous command so that "q;q" or e;e" ignore the previous
+-- "Buffer modified" (status == "EMOD") warning.
+local status = ""
 
-    ok,ibuf = pcall(inout.get_tty_line)
-    if not ok then
-      error_msg(ibuf)
-      return true
-    end
+function read_and_run_command()
+  local ibuf = nil          -- the command line string
+  local ok
 
-    -- EOF or error reading input
-    if not ibuf then
-      if not buffer.modified or scripted then return nil end
-      error_msg("Warning: buffer modified")
-      buffer.modified = false	-- So that we exit if they ^D again
-      status = "EMOD"
-      return true	-- continue
-    end
-
-    just_printed_error_msg = false
-
-    -- used for debug to get a stack backtrace on runtime errors or interrupts
-    local die_on_errors = false
-
-    if die_on_errors then
-      status,ibuf = exec_command(ibuf, status, false)
-    else
-      -- Use pcall in the hope that bugs don't junk the editor session
-      ok,status,ibuf = pcall(exec_command, ibuf, status, false)
-      if not ok then
-	error_msg(status)
-      end
-    end
-
-    -- status=nil means there was some error. Catch bugs where an error code
-    -- is returned but we never printed an error message. Should never happen.
-    if status == nil and not just_printed_error_msg then
-      error_msg "Something went wrong"
-    elseif status == "QUIT" then
-      return nil
-    end
-
+  ok,ibuf = pcall(inout.get_tty_line)
+  if not ok then
+    error_msg(ibuf)
     return true
   end
+
+  -- EOF or error reading input
+  if not ibuf then
+    if not buffer.modified or scripted then return nil end
+    error_msg("Warning: buffer modified")
+    buffer.modified = false	-- So that we exit if they ^D again
+    status = "EMOD"
+    return true	-- continue
+  end
+
+  just_printed_error_msg = false
+
+  -- used for debug to get a stack backtrace on runtime errors or interrupts
+  local die_on_errors = false
+
+  if die_on_errors then
+    status,ibuf = exec_command(ibuf, status, false)
+  else
+    -- Use pcall in the hope that bugs don't junk the editor session
+    ok,status,ibuf = pcall(exec_command, ibuf, status, false)
+    if not ok then
+      error_msg(status)
+    end
+  end
+
+  -- status=nil means there was some error. Catch bugs where an error code
+  -- is returned but we never printed an error message. Should never happen.
+  if status == nil and not just_printed_error_msg then
+    error_msg "Something went wrong"
+  elseif status == "QUIT" then
+    return nil
+  end
+
+  return true
 end
 
 function M.main_loop()
@@ -926,5 +928,18 @@ function M.main_loop()
   return last_error_msg and 1 or 0
 end
 
+function M.init()
+  -- Initialize static variables
+  verbose = true
+  prompt_on = true
+  just_printed_error_msg = nil
+  last_error_msg = nil
+  def_filename = nil
+  first_addr, second_addr = 0, 0
+  prompt_str = "*"
+  status = ""
+
+  init_command_s()
+end
 
 return M		-- end of module

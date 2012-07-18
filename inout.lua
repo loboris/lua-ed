@@ -12,9 +12,6 @@ local buffer = require "buffer"
 local M = {}		-- the module table
 
 
--- Screen width/height, also set/used by main_loop.lua
-M.window_lines = 24
-M.window_columns = 72
 
 
 -- print text to stdout, applying the conversion flags set in "gflags".
@@ -252,5 +249,14 @@ local function write_file(filename, mode, from, to)
   return (from ~= 0 and from <= to) and (to - from + 1) or 0
 end
 M.write_file = write_file
+
+-- Initialization function, called at ed() startup.
+-- Sets default values for "static" variables.
+local function init()
+  -- Screen width/height, also set/used by main_loop.lua
+  M.window_lines = 24
+  M.window_columns = 72
+end
+M.init = init
 
 return M

@@ -50,28 +50,26 @@ end
 -- The pattern may be nil if the pattern does not parse.
 -- On entry, the first character of ibuf is the delimiter
 -- On return, the first character of ibuf is the closing delimiter
-local get_compiled_pattern	-- forward declaration
-do
-  -- Persistent variables
-  local exp = nil
 
-  function get_compiled_pattern(ibuf)
-    local delimiter = ibuf:sub(1,1)
-    local delim_cc = lua_cc_escape(delimiter)
+-- Persistent local variable
+local exp = nil
 
-    if delimiter == " " then
-      error_msg "Invalid pattern delimiter"
-      return nil
-    end
-    if delimiter == '\n' or ibuf:sub(2,2):match("[\n"..delim_cc.."]") then
-      if delimiter ~= '\n' then ibuf = ibuf:sub(2) end
-      if not exp then error_msg "No previous pattern" end
-      return exp,ibuf
-    end
-    ibuf = ibuf:sub(2)
-    exp,ibuf = extract_pattern(ibuf, delimiter)
-    return exp,ibuf	-- exp may be nil on failure
+function get_compiled_pattern(ibuf)
+  local delimiter = ibuf:sub(1,1)
+  local delim_cc = lua_cc_escape(delimiter)
+
+  if delimiter == " " then
+    error_msg "Invalid pattern delimiter"
+    return nil
   end
+  if delimiter == '\n' or ibuf:sub(2,2):match("[\n"..delim_cc.."]") then
+    if delimiter ~= '\n' then ibuf = ibuf:sub(2) end
+    if not exp then error_msg "No previous pattern" end
+    return exp,ibuf
+  end
+  ibuf = ibuf:sub(2)
+  exp,ibuf = extract_pattern(ibuf, delimiter)
+  return exp,ibuf	-- exp may be nil on failure
 end
 
 -- Add lines matching (or not matching) a pattern to the global-active list.
@@ -288,5 +286,13 @@ function search_and_replace(first_addr, second_addr, gflags, snum, isglobal)
   return true
 end
 M.search_and_replace = search_and_replace
+
+local function init()
+  -- Reinitialize static variables
+  global_pat = nil
+  stbuf = nil
+  exp = nil
+end
+M.init = init
 
 return M
