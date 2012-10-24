@@ -49,3 +49,5 @@ function ed(...)
     return exit_status
 --  end
 end
+
+return ed
