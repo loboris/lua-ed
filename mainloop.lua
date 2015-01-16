@@ -735,7 +735,7 @@ do
     if not ibuf then return nil end
     inout.display_lines(second_addr,
 			math.min(buffer.last_addr,
-				 second_addr + inout.window_lines),
+				 second_addr + inout.window_lines - 1),
 			gflags)
     gflags = {}
     return "",ibuf
